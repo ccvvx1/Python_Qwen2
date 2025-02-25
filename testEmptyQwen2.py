@@ -4,12 +4,12 @@ import torch
 # 配置参数
 config = {
     "architectures": ["Qwen2ForCausalLM"],
-    "vocab_size": 100,
-    "hidden_size": 512,
-    "intermediate_size": 50,
-    "num_hidden_layers": 4,
-    "num_attention_heads": 4,
-    "max_position_embeddings": 70,
+    "vocab_size": 600,
+    "hidden_size": 1536,
+    "intermediate_size": 1024,
+    "num_hidden_layers": 28,
+    "num_attention_heads": 12,
+    "max_position_embeddings": 600,
     "torch_dtype": "float16"
 }
 
