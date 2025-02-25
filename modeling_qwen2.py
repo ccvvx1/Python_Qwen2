@@ -135,14 +135,21 @@ class Qwen2Attention(nn.Module):
 
     def __init__(self, config: Qwen2Config, layer_idx: int):
         super().__init__()
+        print("对应的层id: ", layer_idx)
+        print("隐藏层数量： ", config.hidden_size)
+        print("注意力头数：", config.num_attention_heads)
+        print("kv注意力头数：", config.num_key_value_heads)
         self.config = config
         self.layer_idx = layer_idx
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+        print("头部维度：", self.head_dim)
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
+        print("注意力组合数：", self.num_key_value_groups)
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
         self.q_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim, bias=True)
+        print("q模型：",self.q_proj)
         self.k_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
         self.v_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
         self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size, bias=False)
@@ -157,11 +164,16 @@ class Qwen2Attention(nn.Module):
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         input_shape = hidden_states.shape[:-1]
+
         hidden_shape = (*input_shape, -1, self.head_dim)
+        print("隐藏层形状：", hidden_shape)
 
         query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        print("处理过的q形状：", query_states.shape)
         key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        print("处理过的k形状：", key_states.shape)
         value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        print("处理过的v形状：", value_states.shape)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -286,6 +298,7 @@ class Qwen2DecoderLayer(nn.Module):
 class Qwen2RotaryEmbedding(nn.Module):
     def __init__(self, config: Qwen2Config, device=None):
         super().__init__()
+        # print("旋转编码配置：", config)
         # BC: "rope_type" was originally "type"
         if hasattr(config, "rope_scaling") and config.rope_scaling is not None:
             self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
@@ -323,23 +336,34 @@ class Qwen2RotaryEmbedding(nn.Module):
     @torch.no_grad()
     def forward(self, x, position_ids):
         if "dynamic" in self.rope_type:
+            print("进行动态设置")
             self._dynamic_frequency_update(position_ids, device=x.device)
 
+        print("位置id的形状一：", position_ids.shape[0])
+        print("位置id的形状：", position_ids.shape)
         # Core RoPE block
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        print("相反频率的扩展形状：", inv_freq_expanded.shape)
         position_ids_expanded = position_ids[:, None, :].float()
+        print("位置扩展的形状：", position_ids_expanded.shape)
         # Force float32 (see https://github.com/huggingface/transformers/pull/29285)
         device_type = x.device.type
         device_type = device_type if isinstance(device_type, str) and device_type != "mps" else "cpu"
         with torch.autocast(device_type=device_type, enabled=False):
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            print("频率的形状：", freqs.shape)
             emb = torch.cat((freqs, freqs), dim=-1)
+            print("emb的形状：", emb.shape)
             cos = emb.cos()
+            print("emb.cos的形状：", cos.shape)
             sin = emb.sin()
+            print("emb.sin的形状：", sin.shape)
 
         # Advanced RoPE types (e.g. yarn) apply a post-processing scaling factor, equivalent to scaling attention
         cos = cos * self.attention_scaling
         sin = sin * self.attention_scaling
+        print("处理过的sin的形状：", sin.shape)
+        print("attention_scaling：", self.attention_scaling)
 
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
@@ -576,6 +600,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
 
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
+        print("位置编码数量：", len(position_embeddings))
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -598,7 +623,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
                     position_embeddings,
                 )
             else:
-                print("分析用的分支")
+                print("分析用的分支，输入的形状：", hidden_states.shape)
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=causal_mask,
