@@ -479,9 +479,18 @@ class Qwen2Model(Qwen2PreTrainedModel):
     """
 
     def __init__(self, config: Qwen2Config):
-        super().__init__(config)
-        self.padding_idx = config.pad_token_id
-        self.vocab_size = config.vocab_size
+        super().__init__(config)        
+
+        # 设置填充符的索引（从配置中获取，用于嵌入层的padding_idx参数）
+        self.padding_idx = config.pad_token_id  # 通常对应tokenizer的pad_token_id，用于忽略填充位置的梯度计算
+
+        # 设置词汇表大小（从配置中获取，决定嵌入矩阵的维度）
+        self.vocab_size = config.vocab_size     # 与tokenizer词汇量严格一致，表示可处理的不同token总数
+
+        # 调试打印（生产环境建议移除）
+        print("填充符的索引padding_idx: ", self.padding_idx)  # 示例输出：padding_idx: 0 （假设pad_token_id=0）
+        print("词汇表大小vocab_size: ", self.vocab_size)    # 示例输出：vocab_size: 151936 （Qwen2典型值）
+
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList(
