@@ -551,19 +551,26 @@ class Qwen2Model(Qwen2PreTrainedModel):
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache()
+            print("使用缓冲")
 
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
             cache_position = torch.arange(
                 past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
             )
+            print("使用位置缓冲")
 
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
+            print("位置id")
+
+        print("遮罩： ", attention_mask)
+        print("位置缓冲：", cache_position)
 
         causal_mask = self._update_causal_mask(
             attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
         )
+        print("随机mask: ", causal_mask)
 
         hidden_states = inputs_embeds
 
@@ -665,6 +672,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
                 sliding_window=self.config.sliding_window,
                 is_training=self.training,
             ):
+                print("返回方式1")
                 return None
 
         dtype, device = input_tensor.dtype, input_tensor.device
@@ -673,6 +681,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
         # SlidingWindowCache or StaticCache
         if using_sliding_window_cache or using_static_cache:
             target_length = past_key_values.get_max_cache_shape()
+            print("目标长度方式1：", target_length)
         # DynamicCache or no cache
         else:
             target_length = (
@@ -680,6 +689,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
                 if isinstance(attention_mask, torch.Tensor)
                 else past_seen_tokens + sequence_length + 1
             )
+            print("目标长度方式2： ", target_length)
 
         # In case the provided `attention` mask is 2D, we generate a causal mask here (4D).
         causal_mask = self._prepare_4d_causal_attention_mask_with_cache_position(
