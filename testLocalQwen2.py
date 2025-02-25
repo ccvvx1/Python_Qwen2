@@ -10,8 +10,9 @@ model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloa
 # model.generation_config = GenerationConfig.from_pretrained(model_name)
 # model.generation_config.pad_token_id = model.generation_config.eos_token_id
 print(model)
-text = "An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors. The output is"
+text = "An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors. The output is ok good good good-look"
 inputs = tokenizer(text, return_tensors="pt")
+print("输入内容：", inputs)
 outputs = model.generate(**inputs.to(model.device), max_new_tokens=100)
 
 result = tokenizer.decode(outputs[0], skip_special_tokens=True)

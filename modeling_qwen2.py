@@ -490,9 +490,12 @@ class Qwen2Model(Qwen2PreTrainedModel):
         # 调试打印（生产环境建议移除）
         print("填充符的索引padding_idx: ", self.padding_idx)  # 示例输出：padding_idx: 0 （假设pad_token_id=0）
         print("词汇表大小vocab_size: ", self.vocab_size)    # 示例输出：vocab_size: 151936 （Qwen2典型值）
+        print("隐藏层大小hidden_size: ", config.hidden_size)    # 示例输出：vocab_size: 151936 （Qwen2典型值）
 
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+        print("Embedding形状: ", self.embed_tokens.weight.shape)    # 示例输出：vocab_size: 151936 （Qwen2典型值）
+        print("num_hidden_layers层数： ", config.num_hidden_layers)
         self.layers = nn.ModuleList(
             [Qwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
@@ -585,6 +588,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
                     position_embeddings,
                 )
             else:
+                print("分析用的分支")
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=causal_mask,
@@ -598,6 +602,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
                 )
 
             hidden_states = layer_outputs[0]
+            print("各层解密输出的形状：", hidden_states.shape)
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
