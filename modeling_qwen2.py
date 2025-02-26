@@ -621,10 +621,10 @@ class Qwen2Model(Qwen2PreTrainedModel):
             print("输入的形状： ", inputs_embeds.shape)
             print("输入的embed内容： ", inputs_embeds)
 
-        legacy_cache = past_key_values.to_legacy_cache()
-        print("旧值：")
-        for layer_idx, (key, value) in enumerate(legacy_cache):
-            print(f"Layer {layer_idx} Key Shape: {key.shape}, Value Shape: {value.shape}")
+        # legacy_cache = past_key_values.to_legacy_cache()
+        # print("旧值：")
+        # for layer_idx, (key, value) in enumerate(legacy_cache):
+        #     print(f"Layer {layer_idx} Key Shape: {key.shape}, Value Shape: {value.shape}")
             # 示例输出：Layer 0 Key Shape: torch.Size([1, 12, 256]), ...
 
         if use_cache and past_key_values is None:
@@ -880,6 +880,14 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin):
         super().__init__(config)
         self.model = Qwen2Model(config)
         self.vocab_size = config.vocab_size
+
+        # nn.embedding和nn.linear的权重可以相互转换
+        # embedding = nn.Embedding(num_emb=10000, emb_dim=300)
+        # linear = nn.Linear(in_features=10000, out_features=300, bias=False)
+
+        # # 权重共享（转置嵌入矩阵）
+        # linear.weight = nn.Parameter(embedding.weight.T)  # (300, 10000) → (10000, 300)
+
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         # Initialize weights and apply final processing
@@ -974,11 +982,17 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin):
             cache_position=cache_position,
             **kwargs,
         )
+        print("真正输出的形状：", outputs)
 
         hidden_states = outputs[0]
+        print("第一个隐藏层输出的形状：", hidden_states.shape)
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
+        print("保存的信息：", logits_to_keep)
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+        print("片段信息：", slice_indices)
+        print("隐藏层扩展的形状：", hidden_states[:, slice_indices, :].shape)
         logits = self.lm_head(hidden_states[:, slice_indices, :])
+        print("输出内容的形状：", logits.shape)
 
         loss = None
         if labels is not None:
