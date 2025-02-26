@@ -135,24 +135,31 @@ class Qwen2Attention(nn.Module):
 
     def __init__(self, config: Qwen2Config, layer_idx: int):
         super().__init__()
-        print("对应的层id: ", layer_idx)
-        print("隐藏层数量： ", config.hidden_size)
-        print("注意力头数：", config.num_attention_heads)
-        print("kv注意力头数：", config.num_key_value_heads)
+        if layer_idx == 0:
+            print("      对应的层id: ", layer_idx)
+            print("      隐藏层数量： ", config.hidden_size)
+            print("      注意力头数：", config.num_attention_heads)
+            print("      kv注意力头数：", config.num_key_value_heads)
         self.config = config
         self.layer_idx = layer_idx
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-        print("头部维度：", self.head_dim)
+        if layer_idx == 0:
+            print("      头部维度 head_dim：", self.head_dim)
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
-        print("注意力组合数：", self.num_key_value_groups)
+        if layer_idx == 0:
+            print("      注意力组合数：", self.num_key_value_groups)
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
         self.q_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim, bias=True)
-        print("q模型：",self.q_proj)
         self.k_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
         self.v_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
         self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size, bias=False)
+        if layer_idx == 0:
+            print("      q模型：",self.q_proj)
+            print("      k模型：",self.k_proj)
+            print("      v模型：",self.v_proj)
+            print("      o模型：",self.o_proj)
 
     def forward(
         self,
