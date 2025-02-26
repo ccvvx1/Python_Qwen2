@@ -42,7 +42,10 @@ _CHECKPOINT_FOR_DOC = "meta-qwen2/Qwen2-2-7b-hf"
 _CONFIG_FOR_DOC = "Qwen2Config"
 
 
+# 门控线性单元(Gated Linear Unit)变种
+# 通过门控机制控制信息流，增强模型非线性表达能力
 class Qwen2MLP(nn.Module):
+    bMlp = True
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -55,6 +58,10 @@ class Qwen2MLP(nn.Module):
 
     def forward(self, x):
         down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        if Qwen2MLP.bMlp == True:
+            print(" mlp层输入的形状：", x.shape)
+            print(" mlp层输出的形状：", down_proj.shape)
+            Qwen2MLP.bMlp = False
         return down_proj
 
 
@@ -104,6 +111,7 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
+bAttn = True
 
 def eager_attention_forward(
     module: nn.Module,
@@ -127,6 +135,12 @@ def eager_attention_forward(
     attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
     attn_output = torch.matmul(attn_weights, value_states)
     attn_output = attn_output.transpose(1, 2).contiguous()
+
+    print("++++++++++++++++++++")
+    if bAttn:
+        print("注意力输出的形状：", attn_output.shape)
+        print("注意力权重的形状：", attn_weights.shape)
+        bAttn = False
 
     return attn_output, attn_weights
 
@@ -224,6 +238,9 @@ class Qwen2Attention(nn.Module):
                 )
             else:
                 attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+                # sdpa_attention_forward
+                # print("注意力函数：", attention_interface)
+
 
         # 通过数学计算qkv关系，因为缓冲包括其他输入文字，所以可以完成整个上下文的细节关注
         attn_output, attn_weights = attention_interface(
@@ -237,9 +254,15 @@ class Qwen2Attention(nn.Module):
             sliding_window=sliding_window,  # main diff with Llama
             **kwargs,
         )
+        if self.layer_idx == 0:
+            print("  注意力输出的形状：", attn_output.shape)
+            print("  注意力权重：", attn_weights)
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        # o_proj的形状[1, 21, 12, 128]和最终输出[1, 21, 1536]密切相关，最后两个值相乘为同一个值
         attn_output = self.o_proj(attn_output)
+        if self.layer_idx == 0:
+            print("  处理过的注意力输出的形状：", attn_output.shape)
         return attn_output, attn_weights
 
 
