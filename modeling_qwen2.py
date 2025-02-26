@@ -201,6 +201,7 @@ class Qwen2Attention(nn.Module):
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             if self.layer_idx == 0:
                 print("  缓冲位置：", cache_position)
+            # q作为查询值，不需要保存到kv缓冲
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
         sliding_window = None
