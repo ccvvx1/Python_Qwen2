@@ -86,6 +86,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
     cos = cos.unsqueeze(unsqueeze_dim)
+    
     sin = sin.unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
@@ -135,6 +136,7 @@ class Qwen2Attention(nn.Module):
 
     def __init__(self, config: Qwen2Config, layer_idx: int):
         super().__init__()
+        self.layer_idx = layer_idx
         if layer_idx == 0:
             print("      对应的层id: ", layer_idx)
             print("      隐藏层数量： ", config.hidden_size)
@@ -173,21 +175,32 @@ class Qwen2Attention(nn.Module):
         input_shape = hidden_states.shape[:-1]
 
         hidden_shape = (*input_shape, -1, self.head_dim)
-        print("隐藏层形状：", hidden_shape)
+        if self.layer_idx == 0:
+            print("  输入的原始形状：", hidden_states.shape)
+            print("  输入形状：", input_shape)
+            print("  隐藏层形状：", hidden_shape)
 
         query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        print("处理过的q形状：", query_states.shape)
+        if self.layer_idx == 0:
+            print("  处理过的q形状：", query_states.shape)
         key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        print("处理过的k形状：", key_states.shape)
+        if self.layer_idx == 0:
+            print("  处理过的k形状：", key_states.shape)
         value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        print("处理过的v形状：", value_states.shape)
+        if self.layer_idx == 0:
+            print("  处理过的v形状：", value_states.shape)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        if self.layer_idx == 0:
+            print("  旋转处理过的q形状：", query_states.shape)
+            print("  旋转处理过的k形状：", key_states.shape)
 
         if past_key_value is not None:
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+            if self.layer_idx == 0:
+                print("  缓冲位置：", cache_position)
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
         sliding_window = None
@@ -198,7 +211,10 @@ class Qwen2Attention(nn.Module):
         ):
             sliding_window = self.config.sliding_window
 
+        # 通过数学计算qkv关系
         attention_interface: Callable = eager_attention_forward
+        if self.layer_idx == 0:
+            print("  注意力机制类型：", self.config._attn_implementation)
         if self.config._attn_implementation != "eager":
             if self.config._attn_implementation == "sdpa" and kwargs.get("output_attentions", False):
                 logger.warning_once(
@@ -208,6 +224,7 @@ class Qwen2Attention(nn.Module):
             else:
                 attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
+        # 通过数学计算qkv关系，因为缓冲包括其他输入文字，所以可以完成整个上下文的细节关注
         attn_output, attn_weights = attention_interface(
             self,
             query_states,
@@ -580,6 +597,12 @@ class Qwen2Model(Qwen2PreTrainedModel):
             print("输入的形状： ", inputs_embeds.shape)
             print("输入的embed内容： ", inputs_embeds)
 
+        legacy_cache = past_key_values.to_legacy_cache()
+        print("旧值：")
+        for layer_idx, (key, value) in enumerate(legacy_cache):
+            print(f"Layer {layer_idx} Key Shape: {key.shape}, Value Shape: {value.shape}")
+            # 示例输出：Layer 0 Key Shape: torch.Size([1, 12, 256]), ...
+
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache()
             print("使用缓冲")
@@ -613,7 +636,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
 
-        for decoder_layer in self.layers[: self.config.num_hidden_layers]:
+        for index, decoder_layer in enumerate(self.layers[: self.config.num_hidden_layers]):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -630,7 +653,8 @@ class Qwen2Model(Qwen2PreTrainedModel):
                     position_embeddings,
                 )
             else:
-                print("分析用的分支，输入的形状：", hidden_states.shape)
+                if index == 0:
+                    print("分析用的分支，输入的形状：", hidden_states.shape)
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=causal_mask,
@@ -644,7 +668,8 @@ class Qwen2Model(Qwen2PreTrainedModel):
                 )
 
             hidden_states = layer_outputs[0]
-            print("各层解密输出的形状：", hidden_states.shape)
+            if index == 0:
+                print("各层解密输出的形状：", hidden_states.shape)
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)

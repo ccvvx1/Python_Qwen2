@@ -10,3 +10,4 @@ model.generation_config.pad_token_id = model.generation_config.eos_token_id
 text = "An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors. The output is"
 inputs = tokenizer(text, return_tensors="pt")
 model.save_pretrained("../depseek-ai")
+tokenizer.save_pretrained("../Python_Qwen2")
