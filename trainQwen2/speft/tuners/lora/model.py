@@ -26,15 +26,15 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available
-from peft.tuners.tuners_utils import (
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available
+from speft.tuners.tuners_utils import (
     BaseTuner,
     BaseTunerLayer,
     check_target_module_exists,
     onload_layer,
     replicate_layers,
 )
-from peft.utils import (
+from speft.utils import (
     TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING,
     ModulesToSaveWrapper,
     _freeze_adapter,
@@ -42,8 +42,8 @@ from peft.utils import (
     get_peft_model_state_dict,
     get_quantization_config,
 )
-from peft.utils.merge_utils import dare_linear, dare_ties, magnitude_prune, task_arithmetic, ties
-from peft.utils.other import get_pattern_key
+from speft.utils.merge_utils import dare_linear, dare_ties, magnitude_prune, task_arithmetic, ties
+from speft.utils.other import get_pattern_key
 
 from .aqlm import dispatch_aqlm
 from .awq import dispatch_awq
@@ -82,7 +82,7 @@ class LoraModel(BaseTuner):
 
         ```py
         >>> from transformers import AutoModelForSeq2SeqLM
-        >>> from peft import LoraModel, LoraConfig
+        >>> from speft import LoraModel, LoraConfig
 
         >>> config = LoraConfig(
         ...     task_type="SEQ_2_SEQ_LM",
@@ -99,7 +99,7 @@ class LoraModel(BaseTuner):
         ```py
         >>> import torch
         >>> import transformers
-        >>> from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
+        >>> from speft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
 
         >>> rank = ...
         >>> target_modules = ["q_proj", "k_proj", "v_proj", "out_proj", "fc_in", "fc_out", "wte"]
@@ -218,7 +218,7 @@ class LoraModel(BaseTuner):
                 kwargs[f"{quant_method}_quantization_config"] = quantization_config
 
         # note: AdaLoraLayer is a subclass of LoraLayer, we need to exclude it
-        from peft.tuners.adalora import AdaLoraLayer
+        from speft.tuners.adalora import AdaLoraLayer
 
         if isinstance(target, LoraLayer) and not isinstance(target, AdaLoraLayer):
             target.update_layer(
@@ -881,7 +881,7 @@ class LoraModel(BaseTuner):
 
         ```py
         >>> from transformers import AutoModelForCausalLM
-        >>> from peft import PeftModel
+        >>> from speft import PeftModel
 
         >>> base_model = AutoModelForCausalLM.from_pretrained("tiiuae/falcon-40b")
         >>> peft_model_id = "smangrul/falcon-40B-int4-peft-lora-sfttrainer-sample"

@@ -59,7 +59,7 @@ if is_comet_available():
     import comet_ml
 
 if is_peft_available():
-    from peft import LoraConfig, PeftConfig
+    from speft import LoraConfig, PeftConfig
 
 
 class DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):

@@ -20,7 +20,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
+from speft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 
 
 class HRALayer(BaseTunerLayer):

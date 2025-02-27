@@ -43,7 +43,7 @@ from .utils import compute_accuracy, disable_dropout_in_model, generate_model_ca
 
 
 if is_peft_available():
-    from peft import PeftModel, get_peft_model, prepare_model_for_kbit_training
+    from speft import PeftModel, get_peft_model, prepare_model_for_kbit_training
 
 if is_wandb_available():
     import wandb

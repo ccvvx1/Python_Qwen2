@@ -31,8 +31,8 @@ from .sd_utils import convert_state_dict_to_diffusers
 
 
 if is_peft_available():
-    from peft import LoraConfig
-    from peft.utils import get_peft_model_state_dict
+    from speft import LoraConfig
+    from speft.utils import get_peft_model_state_dict
 
 
 @dataclass

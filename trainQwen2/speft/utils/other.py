@@ -223,7 +223,7 @@ class ModulesToSaveWrapper(torch.nn.Module):
             raise TypeError(f"modules_to_save cannot be applied to modules of type {cls_name}")
 
         # local import to avoid circular import
-        from peft.tuners.tuners_utils import BaseTunerLayer
+        from speft.tuners.tuners_utils import BaseTunerLayer
 
         if isinstance(self.original_module, BaseTunerLayer):
             # e.g. applying modules_to_save to a lora layer makes no sense

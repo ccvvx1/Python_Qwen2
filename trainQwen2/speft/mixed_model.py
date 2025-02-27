@@ -23,7 +23,7 @@ from accelerate.hooks import remove_hook_from_submodules
 from torch import nn
 from transformers.utils import PushToHubMixin
 
-from peft.utils.constants import DUMMY_MODEL_CONFIG
+from speft.utils.constants import DUMMY_MODEL_CONFIG
 
 from .config import PeftConfig
 from .peft_model import PeftModel
@@ -439,7 +439,7 @@ class PeftMixedModel(PushToHubMixin, torch.nn.Module):
             kwargs: (`optional`):
                 Additional keyword arguments passed along to the specific PEFT configuration class.
         """
-        # note: adapted from PeftModel.from_pretrained
+        # note: adapted from speftModel.from_pretrained
         from .mapping import PEFT_TYPE_TO_CONFIG_MAPPING
 
         # load the config
@@ -458,7 +458,7 @@ class PeftMixedModel(PushToHubMixin, torch.nn.Module):
         else:
             raise ValueError(f"The input config must be a PeftConfig, got {config.__class__}")
 
-        # note: this is different from PeftModel.from_pretrained
+        # note: this is different from speftModel.from_pretrained
         if config.peft_type not in PEFT_TYPE_TO_MODEL_MAPPING:
             raise ValueError(f"Adapter of type {config.peft_type} is not supported for mixed models.")
 
@@ -473,7 +473,7 @@ class PeftMixedModel(PushToHubMixin, torch.nn.Module):
         else:
             config.inference_mode = not is_trainable
 
-        # note: this is different from PeftModel.from_pretrained, we always return a PeftMixedModel
+        # note: this is different from speftModel.from_pretrained, we always return a PeftMixedModel
         model = cls(model, config, adapter_name)
         # the low_cpu_mem_usage option is handled through kwargs
         model.load_adapter(model_id, adapter_name, is_trainable=is_trainable, **kwargs)

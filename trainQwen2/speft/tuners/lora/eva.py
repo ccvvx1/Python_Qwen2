@@ -26,10 +26,10 @@ import torch.distributed as dist
 from tqdm import tqdm
 from transformers.pytorch_utils import Conv1D
 
-from peft.tuners.tuners_utils import _find_minimal_target_modules, check_target_module_exists
-from peft.utils.constants import MIN_TARGET_MODULES_FOR_OPTIMIZATION
-from peft.utils.incremental_pca import IncrementalPCA
-from peft.utils.other import _get_submodules, get_pattern_key
+from speft.tuners.tuners_utils import _find_minimal_target_modules, check_target_module_exists
+from speft.utils.constants import MIN_TARGET_MODULES_FOR_OPTIMIZATION
+from speft.utils.incremental_pca import IncrementalPCA
+from speft.utils.other import _get_submodules, get_pattern_key
 
 from .config import LoraConfig
 from .layer import Embedding, LoraLayer, _ConvNd

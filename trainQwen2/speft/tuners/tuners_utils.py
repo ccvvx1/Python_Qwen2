@@ -31,15 +31,15 @@ from torch import nn
 from transformers import PreTrainedModel
 from transformers.pytorch_utils import Conv1D
 
-from peft.utils import INCLUDE_LINEAR_LAYERS_SHORTHAND
-from peft.utils.constants import (
+from speft.utils import INCLUDE_LINEAR_LAYERS_SHORTHAND
+from speft.utils.constants import (
     DUMMY_MODEL_CONFIG,
     DUMMY_TARGET_MODULES,
     EMBEDDING_LAYER_NAMES,
     MIN_TARGET_MODULES_FOR_OPTIMIZATION,
     SEQ_CLS_HEAD_NAMES,
 )
-from peft.utils.peft_types import PeftType, TaskType
+from speft.utils.peft_types import PeftType, TaskType
 
 from ..config import PeftConfig
 from ..utils import ModulesToSaveWrapper, _get_submodules
@@ -870,7 +870,7 @@ def _find_minimal_target_modules(
 
     Example:
         ```py
-        >>> from peft.tuners.tuners_utils import _find_minimal_target_modules
+        >>> from speft.tuners.tuners_utils import _find_minimal_target_modules
 
         >>> target_modules = [f"model.decoder.layers.{i}.self_attn.q_proj" for i in range(100)]
         >>> target_modules += [f"model.decoder.layers.{i}.self_attn.v_proj" for i in range(100)]

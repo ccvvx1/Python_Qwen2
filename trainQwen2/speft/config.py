@@ -120,13 +120,13 @@ class PeftConfigMixin(PushToHubMixin):
                 Keyword arguments passed along to the configuration initialization.
         """
         # Avoid circular dependency .. TODO: fix this with a larger refactor
-        from peft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
+        from speft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
 
         # TODO: this hack is needed to fix the following issue (on commit 702f937):
         # if someone saves a default config and loads it back with `PeftConfig` class it yields to
         # not loading the correct config class.
         #
-        # from peft import AdaLoraConfig, PeftConfig
+        # from speft import AdaLoraConfig, PeftConfig
         # peft_config = AdaLoraConfig()
         # print(peft_config)
         # >>> AdaLoraConfig(peft_type=<PeftType.ADALORA: 'ADALORA'>, auto_mapping=None, base_model_name_or_path=None,

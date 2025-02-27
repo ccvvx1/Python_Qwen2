@@ -15,8 +15,8 @@
 from collections import namedtuple
 from dataclasses import dataclass, field
 
-from peft.config import PeftConfig
-from peft.utils import PeftType
+from speft.config import PeftConfig
+from speft.utils import PeftType
 
 from .utils import llama_compute_query_states
 

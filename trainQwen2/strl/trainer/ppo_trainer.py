@@ -70,7 +70,7 @@ from .utils import (
 
 
 if is_peft_available():
-    from peft import PeftConfig, PeftModel, get_peft_model
+    from speft import PeftConfig, PeftModel, get_peft_model
 
 if is_wandb_available():
     import wandb

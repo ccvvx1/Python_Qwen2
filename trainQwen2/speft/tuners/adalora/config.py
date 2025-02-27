@@ -16,8 +16,8 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Optional
 
-from peft.tuners.lora import LoraConfig
-from peft.utils import PeftType
+from speft.tuners.lora import LoraConfig
+from speft.utils import PeftType
 
 
 @dataclass

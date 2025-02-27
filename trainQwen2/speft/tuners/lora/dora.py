@@ -18,8 +18,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from peft.utils.integrations import dequantize_module_weight, gather_params_ctx
-from peft.utils.other import transpose
+from speft.utils.integrations import dequantize_module_weight, gather_params_ctx
+from speft.utils.other import transpose
 
 
 class DoraLinearLayer(nn.Module):

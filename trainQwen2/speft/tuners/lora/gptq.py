@@ -16,9 +16,9 @@ from typing import Any, Optional
 
 import torch
 
-from peft.tuners.lora.layer import LoraLayer
-from peft.tuners.tuners_utils import BaseTunerLayer
-from peft.utils import get_auto_gptq_quant_linear
+from speft.tuners.lora.layer import LoraLayer
+from speft.tuners.tuners_utils import BaseTunerLayer
+from speft.utils import get_auto_gptq_quant_linear
 
 
 class QuantLinear(torch.nn.Module, LoraLayer):

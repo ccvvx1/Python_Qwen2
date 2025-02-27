@@ -287,6 +287,7 @@ class SFTTrainer(Trainer):
             raise ImportError("To use PeftModel, you need to install the `peft` library.")
 
         if not isinstance(peft_config, PeftConfig):
+            print(" ====期望的类型==== ", PeftConfig)
             raise ValueError(
                 f"Expected PeftConfig object but got {type(peft_config)}. If you want to use the PeftModel, you need "
                 "to pass a PeftConfig object to the SFTTrainer."
@@ -319,7 +320,7 @@ class SFTTrainer(Trainer):
 
         # Create PEFT model
         if (
-            version.parse(peft.__version__) >= version.parse("0.12")  # autocast_adapter_dtype introduced in 0.12
+            version.parse(speft.__version__) >= version.parse("0.12")  # autocast_adapter_dtype introduced in 0.12
             and getattr(model, "is_loaded_in_4bit", False)
             and is_sharded_qlora
         ):

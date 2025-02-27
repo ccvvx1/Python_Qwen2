@@ -21,11 +21,11 @@ from typing import Optional, Union
 import torch
 import torch.nn as nn
 
-from peft.tuners.lora.layer import LoraLayer
-from peft.tuners.lora.model import LoraModel
-from peft.tuners.tuners_utils import BaseTuner
-from peft.utils.constants import DUMMY_TARGET_MODULES
-from peft.utils.save_and_load import set_peft_model_state_dict
+from speft.tuners.lora.layer import LoraLayer
+from speft.tuners.lora.model import LoraModel
+from speft.tuners.tuners_utils import BaseTuner
+from speft.utils.constants import DUMMY_TARGET_MODULES
+from speft.utils.save_and_load import set_peft_model_state_dict
 
 from .. import lora
 from .classifier import XLoraClassifier
@@ -103,10 +103,10 @@ def _load_adapter_into_lora_model(
 
     All params pertain to the adapter (adapter name, model id, `i` is the adapter number in 0 indexing).
     """
-    from peft.peft_model import PeftModel
-    from peft.tuners.lora.config import LoraConfig
-    from peft.utils.other import infer_device
-    from peft.utils.save_and_load import load_peft_weights
+    from speft.peft_model import PeftModel
+    from speft.tuners.lora.config import LoraConfig
+    from speft.utils.other import infer_device
+    from speft.utils.save_and_load import load_peft_weights
 
     hf_hub_download_kwargs, kwargs = PeftModel._split_kwargs(kwargs)
     if torch_device is None:
@@ -171,7 +171,7 @@ class XLoraModel(BaseTuner):
     Example:
         ```py
         >>> from transformers import AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
-        >>> from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
+        >>> from speft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
 
         >>> model_config = AutoConfig.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
         >>> config = XLoraConfig(

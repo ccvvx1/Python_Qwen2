@@ -28,7 +28,7 @@ from safetensors import SafetensorError, safe_open
 from transformers.utils import cached_file
 from transformers.utils.hub import get_checkpoint_shard_files
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available
 
 
 class NFQuantizer:
@@ -367,7 +367,7 @@ def replace_lora_weights_loftq(
     if not is_bnb_4bit_available():
         raise ValueError("bitsandbytes must be installed and the model must be quantized in 4bits.")
 
-    from peft.tuners.lora import Linear4bit
+    from speft.tuners.lora import Linear4bit
 
     # model_path = _check_model_path_loftq(model_path, peft_model)
     prefix = "base_model.model."

@@ -19,7 +19,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from peft.tuners import lora
+from speft.tuners import lora
 
 from .config import XLoraConfig
 

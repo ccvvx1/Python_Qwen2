@@ -40,7 +40,7 @@ from .utils import generate_model_card, get_comet_experiment_url
 
 
 if is_peft_available():
-    from peft import PeftModel
+    from speft import PeftModel
 
 
 if is_wandb_available():

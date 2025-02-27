@@ -24,9 +24,9 @@ from accelerate.utils.imports import is_xpu_available
 from torch import svd_lowrank
 from transformers.pytorch_utils import Conv1D
 
-from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
-from peft.utils.integrations import dequantize_module_weight, gather_params_ctx, get_bnb_param_type
-from peft.utils.other import transpose
+from speft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
+from speft.utils.integrations import dequantize_module_weight, gather_params_ctx, get_bnb_param_type
+from speft.utils.other import transpose
 
 from .config import LoraConfig
 from .dora import DoraConv2dLayer, DoraConv3dLayer, DoraEmbeddingLayer, DoraLinearLayer, _DoraConvNdLayer
@@ -267,7 +267,7 @@ class LoraLayer(BaseTunerLayer):
         self.get_base_layer().weight.data = weight
 
     def loftq_init(self, adapter_name):
-        from peft.utils.loftq_utils import loftq_init
+        from speft.utils.loftq_utils import loftq_init
 
         weight = self.get_base_layer().weight
         kwargs = {

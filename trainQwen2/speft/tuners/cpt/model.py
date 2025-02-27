@@ -17,7 +17,7 @@ import copy
 import torch
 from torch.nn import CrossEntropyLoss
 
-from peft.utils.integrations import gather_params_ctx
+from speft.utils.integrations import gather_params_ctx
 
 
 class CPTEmbedding(torch.nn.Module):

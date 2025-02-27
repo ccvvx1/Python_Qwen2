@@ -20,8 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
-from peft.config import PeftConfig
-from peft.utils import PeftType
+from speft.config import PeftConfig
+from speft.utils import PeftType
 
 
 @dataclass

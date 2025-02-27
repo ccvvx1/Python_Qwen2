@@ -14,9 +14,9 @@
 
 import torch
 
-from peft.tuners.prompt_tuning import PromptEmbedding
-from peft.utils import TaskType
-from peft.utils.save_and_load import torch_load
+from speft.tuners.prompt_tuning import PromptEmbedding
+from speft.utils import TaskType
+from speft.utils.save_and_load import torch_load
 
 from .config import MultitaskPromptTuningConfig, MultitaskPromptTuningInit
 

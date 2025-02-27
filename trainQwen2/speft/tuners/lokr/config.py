@@ -16,8 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, Optional, Union
 
-from peft.tuners.lycoris_utils import LycorisConfig
-from peft.utils import PeftType
+from speft.tuners.lycoris_utils import LycorisConfig
+from speft.utils import PeftType
 
 
 @dataclass

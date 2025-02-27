@@ -16,8 +16,8 @@ import enum
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
-from peft.tuners.prompt_tuning import PromptTuningConfig
-from peft.utils import PeftType
+from speft.tuners.prompt_tuning import PromptTuningConfig
+from speft.utils import PeftType
 
 
 class MultitaskPromptTuningInit(str, enum.Enum):

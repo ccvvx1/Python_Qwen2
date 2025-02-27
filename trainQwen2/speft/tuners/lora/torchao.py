@@ -19,8 +19,8 @@ from typing import Any, Optional
 import torch
 
 # from torch import nn
-from peft.import_utils import is_torchao_available
-from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
+from speft.import_utils import is_torchao_available
+from speft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 
 from .config import LoraConfig
 from .layer import Linear

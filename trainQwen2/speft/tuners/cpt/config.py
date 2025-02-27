@@ -15,8 +15,8 @@
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
-from peft.config import PromptLearningConfig
-from peft.utils import PeftType
+from speft.config import PromptLearningConfig
+from speft.utils import PeftType
 
 
 @dataclass

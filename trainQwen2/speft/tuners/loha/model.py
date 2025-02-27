@@ -19,7 +19,7 @@ from typing import Dict, Type, Union
 import torch
 from torch import nn
 
-from peft.tuners.lycoris_utils import LycorisConfig, LycorisTuner
+from speft.tuners.lycoris_utils import LycorisConfig, LycorisTuner
 
 from .layer import Conv2d, Linear, LoHaLayer
 
@@ -43,7 +43,7 @@ class LoHaModel(LycorisTuner):
     Example:
         ```py
         >>> from diffusers import StableDiffusionPipeline
-        >>> from peft import LoHaModel, LoHaConfig
+        >>> from speft import LoHaModel, LoHaConfig
 
         >>> config_te = LoHaConfig(
         ...     r=8,

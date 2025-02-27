@@ -19,9 +19,9 @@ from typing import Any, Optional
 
 import torch
 
-from peft.import_utils import is_hqq_available
-from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
-from peft.utils.other import transpose
+from speft.import_utils import is_hqq_available
+from speft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
+from speft.utils.other import transpose
 
 from .layer import LoraLayer
 

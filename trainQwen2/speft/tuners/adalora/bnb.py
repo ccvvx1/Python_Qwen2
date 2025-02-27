@@ -16,7 +16,7 @@ from typing import Any
 
 import torch
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available
 
 from .layer import AdaLoraLayer
 

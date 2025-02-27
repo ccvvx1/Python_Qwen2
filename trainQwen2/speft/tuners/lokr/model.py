@@ -19,7 +19,7 @@ from typing import Dict, Type, Union
 import torch
 from torch import nn
 
-from peft.tuners.lycoris_utils import LycorisConfig, LycorisTuner
+from speft.tuners.lycoris_utils import LycorisConfig, LycorisTuner
 
 from .layer import Conv2d, Linear, LoKrLayer
 
@@ -44,7 +44,7 @@ class LoKrModel(LycorisTuner):
     Example:
         ```py
         >>> from diffusers import StableDiffusionPipeline
-        >>> from peft import LoKrModel, LoKrConfig
+        >>> from speft import LoKrModel, LoKrConfig
 
         >>> config_te = LoKrConfig(
         ...     r=8,

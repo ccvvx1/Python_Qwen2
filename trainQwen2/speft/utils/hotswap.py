@@ -17,8 +17,8 @@ from operator import attrgetter
 
 import torch
 
-from peft.config import PeftConfig
-from peft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
+from speft.config import PeftConfig
+from speft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
 
 from .constants import PEFT_TYPE_TO_PREFIX_MAPPING
 from .other import infer_device
@@ -152,8 +152,8 @@ def hotswap_adapter(model, model_name_or_path, adapter_name, torch_device=None, 
     ```py
     >>> import torch
     >>> from transformers import AutoModelForCausalLM
-    >>> from peft import PeftModel
-    >>> from peft.utils.hotswap import hotswap_adapter
+    >>> from speft import PeftModel
+    >>> from speft.utils.hotswap import hotswap_adapter
 
     >>> model_id = ...
     >>> inputs = ...

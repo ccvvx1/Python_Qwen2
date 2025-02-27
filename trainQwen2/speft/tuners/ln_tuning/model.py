@@ -20,9 +20,9 @@ from torch import nn
 from torch.nn.modules import Module
 from tqdm import tqdm
 
-from peft.config import PeftConfig
-from peft.tuners.tuners_utils import BaseTuner, _get_submodules, check_target_module_exists
-from peft.utils import TRANSFORMERS_MODELS_TO_LNTUNING_TARGET_MODULES_MAPPING, ModulesToSaveWrapper
+from speft.config import PeftConfig
+from speft.tuners.tuners_utils import BaseTuner, _get_submodules, check_target_module_exists
+from speft.utils import TRANSFORMERS_MODELS_TO_LNTUNING_TARGET_MODULES_MAPPING, ModulesToSaveWrapper
 
 from .layer import LNTuningLayer
 
@@ -47,7 +47,7 @@ class LNTuningModel(BaseTuner):
 
         ```py
         >>> from transformers import AutoModelForCausalLM
-        >>> from peft import get_peft_model, TaskType, LNTuningConfig
+        >>> from speft import get_peft_model, TaskType, LNTuningConfig
 
         >>> peft_config = LNTuningConfig(
         ...     task_type=TaskType.CAUSAL_LM,

@@ -34,7 +34,7 @@ from transformers.utils import is_peft_available
 
 
 if is_peft_available():
-    from peft import (
+    from speft import (
         PeftConfig,
         PeftModel,
         PeftModelForCausalLM,
@@ -418,7 +418,7 @@ class PreTrainedModelWrapper(nn.Module):
         check_peft_kwargs = False
 
         if is_peft_available():
-            from peft import prepare_model_for_kbit_training
+            from speft import prepare_model_for_kbit_training
 
             check_peft_kwargs = True
 

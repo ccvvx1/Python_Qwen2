@@ -38,7 +38,7 @@ from transformers import Cache, DynamicCache, EncoderDecoderCache, PreTrainedMod
 from transformers.modeling_outputs import QuestionAnsweringModelOutput, SequenceClassifierOutput, TokenClassifierOutput
 from transformers.utils import PushToHubMixin
 
-from peft.utils.constants import DUMMY_MODEL_CONFIG, PEFT_TYPE_TO_PREFIX_MAPPING
+from speft.utils.constants import DUMMY_MODEL_CONFIG, PEFT_TYPE_TO_PREFIX_MAPPING
 
 from . import __version__
 from .config import PeftConfig
@@ -1419,7 +1419,7 @@ class PeftModelForSequenceClassification(PeftModel):
 
         ```py
         >>> from transformers import AutoModelForSequenceClassification
-        >>> from peft import PeftModelForSequenceClassification, get_peft_config
+        >>> from speft import PeftModelForSequenceClassification, get_peft_config
 
         >>> config = {
         ...     "peft_type": "PREFIX_TUNING",
@@ -1654,7 +1654,7 @@ class PeftModelForCausalLM(PeftModel):
 
         ```py
         >>> from transformers import AutoModelForCausalLM
-        >>> from peft import PeftModelForCausalLM, get_peft_config
+        >>> from speft import PeftModelForCausalLM, get_peft_config
 
         >>> config = {
         ...     "peft_type": "PREFIX_TUNING",
@@ -1937,7 +1937,7 @@ class PeftModelForSeq2SeqLM(PeftModel):
 
         ```py
         >>> from transformers import AutoModelForSeq2SeqLM
-        >>> from peft import PeftModelForSeq2SeqLM, get_peft_config
+        >>> from speft import PeftModelForSeq2SeqLM, get_peft_config
 
         >>> config = {
         ...     "peft_type": "LORA",
@@ -2211,7 +2211,7 @@ class PeftModelForTokenClassification(PeftModel):
 
         ```py
         >>> from transformers import AutoModelForSequenceClassification
-        >>> from peft import PeftModelForTokenClassification, get_peft_config
+        >>> from speft import PeftModelForTokenClassification, get_peft_config
 
         >>> config = {
         ...     "peft_type": "PREFIX_TUNING",
@@ -2434,7 +2434,7 @@ class PeftModelForQuestionAnswering(PeftModel):
 
         ```py
         >>> from transformers import AutoModelForQuestionAnswering
-        >>> from peft import PeftModelForQuestionAnswering, get_peft_config
+        >>> from speft import PeftModelForQuestionAnswering, get_peft_config
 
         >>> config = {
         ...     "peft_type": "LORA",
@@ -2677,7 +2677,7 @@ class PeftModelForFeatureExtraction(PeftModel):
 
         ```py
         >>> from transformers import AutoModel
-        >>> from peft import PeftModelForFeatureExtraction, get_peft_config
+        >>> from speft import PeftModelForFeatureExtraction, get_peft_config
 
         >>> config = {
         ...     "peft_type": "LORA",

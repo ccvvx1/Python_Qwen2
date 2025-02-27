@@ -19,10 +19,10 @@ from typing import Any, Optional
 import bitsandbytes as bnb
 import torch
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available
-from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
-from peft.utils.integrations import dequantize_bnb_weight
-from peft.utils.other import transpose
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available
+from speft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
+from speft.utils.integrations import dequantize_bnb_weight
+from speft.utils.other import transpose
 
 from .layer import LoraLayer
 

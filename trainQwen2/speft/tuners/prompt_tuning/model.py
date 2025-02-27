@@ -16,7 +16,7 @@ import math
 
 import torch
 
-from peft.utils.integrations import gather_params_ctx
+from speft.utils.integrations import gather_params_ctx
 
 from .config import PromptTuningInit
 
@@ -35,7 +35,7 @@ class PromptEmbedding(torch.nn.Module):
     Example:
 
     ```py
-    >>> from peft import PromptEmbedding, PromptTuningConfig
+    >>> from speft import PromptEmbedding, PromptTuningConfig
 
     >>> config = PromptTuningConfig(
     ...     peft_type="PROMPT_TUNING",

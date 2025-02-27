@@ -58,7 +58,7 @@ if is_liger_kernel_available():
     from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
 if is_peft_available():
-    from peft import PeftConfig
+    from speft import PeftConfig
 
 if is_wandb_available():
     import wandb

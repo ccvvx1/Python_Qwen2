@@ -17,9 +17,9 @@ from typing import Any, Optional
 import packaging.version
 import torch
 
-from peft.import_utils import is_auto_awq_available
-from peft.tuners.lora.layer import LoraLayer
-from peft.tuners.tuners_utils import BaseTunerLayer
+from speft.import_utils import is_auto_awq_available
+from speft.tuners.lora.layer import LoraLayer
+from speft.tuners.tuners_utils import BaseTunerLayer
 
 
 class AwqLoraLinear(torch.nn.Module, LoraLayer):

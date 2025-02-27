@@ -24,13 +24,13 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-from peft.tuners.tuners_utils import (
+from speft.tuners.tuners_utils import (
     BaseTuner,
     BaseTunerLayer,
     check_target_module_exists,
     onload_layer,
 )
-from peft.utils import (
+from speft.utils import (
     TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING,
     ModulesToSaveWrapper,
     _get_submodules,
@@ -57,7 +57,7 @@ class BOFTModel(BaseTuner):
 
     Example::
 
-        >>> import transformers >>> from transformers import AutoModelForSeq2SeqLM, BOFTConfig >>> from peft import
+        >>> import transformers >>> from transformers import AutoModelForSeq2SeqLM, BOFTConfig >>> from speft import
         BOFTConfig, get_peft_model
 
         >>> config = BOFTConfig( ... boft_block_size=8, ... boft_n_butterfly_factor=1, ... target_modules=["query",

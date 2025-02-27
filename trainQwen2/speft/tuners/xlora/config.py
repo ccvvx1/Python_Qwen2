@@ -17,8 +17,8 @@ import warnings
 from dataclasses import dataclass
 from typing import Optional
 
-from peft.config import PeftConfig
-from peft.utils.peft_types import PeftType
+from speft.config import PeftConfig
+from speft.utils.peft_types import PeftType
 
 
 @dataclass

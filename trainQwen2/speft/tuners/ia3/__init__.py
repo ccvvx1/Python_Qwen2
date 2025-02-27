@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available
 
 from .config import IA3Config
 from .layer import Conv2d, Conv3d, IA3Layer, Linear

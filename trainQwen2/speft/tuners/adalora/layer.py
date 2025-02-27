@@ -20,9 +20,9 @@ import torch
 import transformers
 from torch import nn
 
-from peft.tuners.lora import LoraLayer
-from peft.tuners.tuners_utils import check_adapters_to_merge
-from peft.utils import transpose
+from speft.tuners.lora import LoraLayer
+from speft.tuners.tuners_utils import check_adapters_to_merge
+from speft.utils import transpose
 
 
 if packaging.version.parse(transformers.__version__) >= packaging.version.parse("4.33.0"):

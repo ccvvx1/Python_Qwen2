@@ -19,7 +19,7 @@ from typing import List, Optional
 import torch
 import torch.nn as nn
 
-from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
+from speft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 
 
 class LNTuningLayer(nn.Module, BaseTunerLayer):

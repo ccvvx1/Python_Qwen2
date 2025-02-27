@@ -51,7 +51,7 @@ from .utils import generate_model_card, get_comet_experiment_url, pad, selective
 
 
 if is_peft_available():
-    from peft import PeftConfig, get_peft_model
+    from speft import PeftConfig, get_peft_model
 
 if is_vllm_available():
     from vllm import LLM, SamplingParams

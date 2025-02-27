@@ -19,8 +19,8 @@ import torch
 import torch.nn as nn
 from transformers.pytorch_utils import Conv1D
 
-from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
-from peft.utils import transpose
+from speft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
+from speft.utils import transpose
 
 
 class IA3Layer(BaseTunerLayer):

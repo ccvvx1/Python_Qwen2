@@ -65,7 +65,7 @@ from .utils import (
 
 
 if is_peft_available():
-    from peft import PeftModel, get_peft_model, prepare_model_for_kbit_training
+    from speft import PeftModel, get_peft_model, prepare_model_for_kbit_training
 
 
 if is_wandb_available():

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available, is_eetq_available
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available, is_eetq_available
 
 from .config import EvaConfig, LoftQConfig, LoraConfig, LoraRuntimeConfig
 from .eva import get_eva_state_dict, initialize_lora_eva_weights

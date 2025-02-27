@@ -26,9 +26,9 @@ from torch.nn.init import _calculate_correct_fan
 from tqdm import tqdm
 from transformers.pytorch_utils import Conv1D
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available
-from peft.tuners.tuners_utils import BaseTuner, BaseTunerLayer, check_target_module_exists
-from peft.utils import (
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available
+from speft.tuners.tuners_utils import BaseTuner, BaseTunerLayer, check_target_module_exists
+from speft.utils import (
     TRANSFORMERS_MODELS_TO_VERA_TARGET_MODULES_MAPPING,
     ModulesToSaveWrapper,
     _get_submodules,
@@ -87,7 +87,7 @@ class VeraModel(BaseTuner):
 
         ```py
         >>> from transformers import AutoModelForCausalLM
-        >>> from peft import VeraConfig, get_peft_model
+        >>> from speft import VeraConfig, get_peft_model
 
         >>> base_model = AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
         >>> config = VeraConfig(r=128)
@@ -488,7 +488,7 @@ class VeraModel(BaseTuner):
 
         ```py
         >>> from transformers import AutoModelForCausalLM
-        >>> from peft import PeftModel
+        >>> from speft import PeftModel
 
         >>> base_model = AutoModelForCausalLM.from_pretrained("tiiuae/falcon-40b")
         >>> peft_model_id = "smangrul/falcon-40B-int4-peft-lora-sfttrainer-sample"

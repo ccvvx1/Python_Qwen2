@@ -64,7 +64,7 @@ model = AutoModelForCausalLM.from_pretrained(
 # model.resize_token_embeddings(len(tokenizer))  # Resize for custom tokens
 
 
-from peft import LoraConfig
+from speft import LoraConfig
 
 peft_config = LoraConfig(
     r=8,  # Rank of the low-rank matrices

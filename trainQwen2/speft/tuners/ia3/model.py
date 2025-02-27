@@ -23,9 +23,9 @@ import torch
 from torch import nn
 from transformers.pytorch_utils import Conv1D
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available
-from peft.tuners.tuners_utils import BaseTuner, BaseTunerLayer, check_target_module_exists
-from peft.utils import (
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available
+from speft.tuners.tuners_utils import BaseTuner, BaseTunerLayer, check_target_module_exists
+from speft.utils import (
     TRANSFORMERS_MODELS_TO_IA3_FEEDFORWARD_MODULES_MAPPING,
     TRANSFORMERS_MODELS_TO_IA3_TARGET_MODULES_MAPPING,
     ModulesToSaveWrapper,
@@ -55,7 +55,7 @@ class IA3Model(BaseTuner):
 
         ```py
         >>> from transformers import AutoModelForSeq2SeqLM, ia3Config
-        >>> from peft import IA3Model, IA3Config
+        >>> from speft import IA3Model, IA3Config
 
         >>> config = IA3Config(
         ...     peft_type="IA3",
@@ -366,7 +366,7 @@ class IA3Model(BaseTuner):
 
         ```py
         >>> from transformers import AutoModelForCausalLM
-        >>> from peft import PeftModel
+        >>> from speft import PeftModel
 
         >>> base_model = AutoModelForCausalLM.from_pretrained("tiiuae/falcon-40b")
         >>> peft_model_id = "smangrul/falcon-40B-int4-peft-lora-sfttrainer-sample"

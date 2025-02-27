@@ -66,7 +66,7 @@ from .utils import (
 
 
 if is_peft_available():
-    from peft import PeftModel, get_peft_model
+    from speft import PeftModel, get_peft_model
 
 if is_apex_available():
     from apex import amp

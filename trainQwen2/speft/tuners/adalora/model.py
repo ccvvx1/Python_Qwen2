@@ -17,17 +17,17 @@ import warnings
 import torch
 from transformers.pytorch_utils import Conv1D
 
-from peft.import_utils import is_bnb_4bit_available, is_bnb_available
-from peft.tuners.lora import LoraConfig, LoraModel
-from peft.tuners.tuners_utils import BaseTunerLayer
-from peft.utils import (
+from speft.import_utils import is_bnb_4bit_available, is_bnb_available
+from speft.tuners.lora import LoraConfig, LoraModel
+from speft.tuners.tuners_utils import BaseTunerLayer
+from speft.utils import (
     TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING,
     _freeze_adapter,
     _get_submodules,
     get_auto_gptq_quant_linear,
     get_quantization_config,
 )
-from peft.utils.integrations import gather_params_ctx
+from speft.utils.integrations import gather_params_ctx
 
 from .gptq import SVDQuantLinear
 from .layer import AdaLoraLayer, RankAllocator, SVDLinear
@@ -50,7 +50,7 @@ class AdaLoraModel(LoraModel):
 
     Example::
 
-        >>> from transformers import AutoModelForSeq2SeqLM >>> from peft import LoraConfig, AdaLoraModel, AdaLoraConfig
+        >>> from transformers import AutoModelForSeq2SeqLM >>> from speft import LoraConfig, AdaLoraModel, AdaLoraConfig
         >>> config = AdaLoraConfig(
                 peft_type="ADALORA", task_type="SEQ_2_SEQ_LM", init_r=12, lora_alpha=32, target_modules=["q", "v"],
                 lora_dropout=0.01,
