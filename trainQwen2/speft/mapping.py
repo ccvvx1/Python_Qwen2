@@ -176,6 +176,7 @@ def get_peft_model(
             False if you intend on training the model, unless the adapter weights will be replaced by different weights
             before training starts.
     """
+    print("正在获取微调模型")
     model_config = BaseTuner.get_model_config(model)
     old_name = peft_config.base_model_name_or_path
     new_name = model.__dict__.get("name_or_path", None)
@@ -209,6 +210,7 @@ def get_peft_model(
         return PeftMixedModel(model, peft_config, adapter_name=adapter_name)
 
     if peft_config.task_type not in MODEL_TYPE_TO_PEFT_MODEL_MAPPING.keys() and not peft_config.is_prompt_learning:
+        print("返回微调模型方式一")
         return PeftModel(
             model,
             peft_config,
@@ -219,6 +221,8 @@ def get_peft_model(
 
     if peft_config.is_prompt_learning:
         peft_config = _prepare_prompt_learning_config(peft_config, model_config)
+    # <class 'speft.peft_model.PeftModelForCausalLM'>
+    print("返回微调模型方式二， 对应模型：", MODEL_TYPE_TO_PEFT_MODEL_MAPPING[peft_config.task_type])
     return MODEL_TYPE_TO_PEFT_MODEL_MAPPING[peft_config.task_type](
         model,
         peft_config,

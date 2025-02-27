@@ -195,6 +195,7 @@ class SFTTrainer(Trainer):
 
         # Dataset
         preprocess_dataset = args.dataset_kwargs is None or not args.dataset_kwargs.get("skip_prepare_dataset", False)
+        # print("准备数据的函数类型：", self._prepare_dataset)
         if preprocess_dataset:
             train_dataset = self._prepare_dataset(
                 train_dataset, processing_class, args, args.packing, formatting_func, "train"
@@ -404,7 +405,7 @@ class SFTTrainer(Trainer):
 
                 def _func(example):
                     return {"text": formatting_func(example)}
-
+                print("处理text字段")
                 dataset = dataset.map(_func, batched=batched, **map_kwargs)
 
             # If the dataset is prompt-completion, convert it to language modeling type
@@ -464,6 +465,7 @@ class SFTTrainer(Trainer):
                     map_kwargs["desc"] = f"Truncating {dataset_name} dataset"
 
                 def truncate(example, max_seq_length):
+                    print("补充更多字节")
                     return {key: example[key][:max_seq_length] for key in ["input_ids", "attention_mask"]}
 
                 dataset = dataset.map(
@@ -474,8 +476,11 @@ class SFTTrainer(Trainer):
 
             # For Liger kernel, ensure only input_ids is present
             if args.use_liger:
+                print("补充ids")
                 dataset = dataset.select_columns("input_ids")
 
+        # 包含网站下载的字段，和新增的字段
+        print("处理完返回的数据：", dataset)
         return dataset
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):

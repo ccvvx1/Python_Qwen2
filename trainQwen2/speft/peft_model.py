@@ -1682,6 +1682,7 @@ class PeftModelForCausalLM(PeftModel):
         self, model: torch.nn.Module, peft_config: PeftConfig, adapter_name: str = "default", **kwargs
     ) -> None:
         super().__init__(model, peft_config, adapter_name, **kwargs)
+        print("设置基本模型")
         self.base_model_prepare_inputs_for_generation = self.base_model.prepare_inputs_for_generation
 
     def forward(
@@ -1701,6 +1702,7 @@ class PeftModelForCausalLM(PeftModel):
             if self.base_model.config.model_type == "mpt":
                 if inputs_embeds is not None:
                     raise AssertionError("forward in MPTForCausalLM does not support inputs_embeds")
+                print("返回基本模型")
                 return self.base_model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
@@ -1757,11 +1759,14 @@ class PeftModelForCausalLM(PeftModel):
             return self._cpt_forward(input_ids, inputs_embeds, peft_config, task_ids, batch_size, **kwargs)
         else:
             if inputs_embeds is None:
+                print("进行编码embed")
                 inputs_embeds = self.word_embeddings(input_ids)
             # concat prompt labels
             if labels is not None:
                 prefix_labels = torch.full((batch_size, peft_config.num_virtual_tokens), -100).to(labels.device)
                 kwargs["labels"] = torch.cat((prefix_labels, labels), dim=1)
+            print("获取提示语")
+            print("模型类型：", self.base_model)
             prompts = self.get_prompt(batch_size=batch_size, task_ids=task_ids)
             prompts = prompts.to(inputs_embeds.dtype)
             inputs_embeds = torch.cat((prompts, inputs_embeds), dim=1)
