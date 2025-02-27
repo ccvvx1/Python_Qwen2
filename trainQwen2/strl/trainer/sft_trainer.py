@@ -58,7 +58,7 @@ if is_liger_kernel_available():
 if is_wandb_available():
     import wandb
 
-
+bPrintMoreKv = True
 class SFTTrainer(Trainer):
     """
     Trainer for Supervised Fine-Tuning (SFT) method.
@@ -214,6 +214,7 @@ class SFTTrainer(Trainer):
 
         # Data collator
         if data_collator is None:
+            print("数据集合")
             data_collator = DataCollatorForLanguageModeling(tokenizer=processing_class, mlm=False)
 
         # Initialize the metrics
@@ -250,6 +251,7 @@ class SFTTrainer(Trainer):
             **super_init_kwargs,
         )
 
+        print("模型标贴名称：", self._tag_names)
         # Add tags for models that have been loaded with the correct transformers version
         if hasattr(self.model, "add_model_tags"):
             self.model.add_model_tags(self._tag_names)
@@ -365,6 +367,7 @@ class SFTTrainer(Trainer):
 
         return model
 
+
     def _prepare_dataset(
         self,
         dataset: Union[Dataset, IterableDataset],
@@ -465,7 +468,11 @@ class SFTTrainer(Trainer):
                     map_kwargs["desc"] = f"Truncating {dataset_name} dataset"
 
                 def truncate(example, max_seq_length):
-                    print("补充更多字节")
+                    global bPrintMoreKv
+                    if bPrintMoreKv:
+                        print("补充更多字节")
+                        print({key: example[key][:max_seq_length] for key in ["input_ids", "attention_mask"]})
+                        bPrintMoreKv = False
                     return {key: example[key][:max_seq_length] for key in ["input_ids", "attention_mask"]}
 
                 dataset = dataset.map(
