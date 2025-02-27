@@ -6,7 +6,7 @@ dataset = load_dataset("Magpie-Align/Magpie-Reasoning-V2-250K-CoT-Deepseek-R1-Ll
 # dataset = load_dataset("Congliu/Chinese-DeepSeek-R1-Distill-data-110k")
 dataset = dataset["train"]
 
-sub_dataset = dataset.select(range(20000))  # 假设需要处理train分片
+sub_dataset = dataset.select(range(200))  # 假设需要处理train分片
 
 # Format the dataset
 def format_instruction(example):
@@ -98,7 +98,7 @@ training_args = TrainingArguments(
     lr_scheduler_type="cosine"
 )
 
-from trl import SFTTrainer
+from strl import SFTTrainer
 from transformers import DataCollatorForLanguageModeling
 
 # Data collator
