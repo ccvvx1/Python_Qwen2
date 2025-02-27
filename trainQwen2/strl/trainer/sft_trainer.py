@@ -49,8 +49,8 @@ from .utils import ConstantLengthDataset, generate_model_card, get_comet_experim
 
 
 if is_peft_available():
-    import peft
-    from peft import PeftConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
+    import speft
+    from speft import PeftConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
 
 if is_liger_kernel_available():
     from liger_kernel.transformers import AutoLigerKernelForCausalLM
@@ -168,6 +168,8 @@ class SFTTrainer(Trainer):
             dict_args["hub_token"] = args.hub_token  # to_dict hides the hub_token
             dict_args.pop("push_to_hub_token")
             args = SFTConfig(**dict_args)
+        
+        # print("训练用的参数：", args)
 
         # Model
         if args.model_init_kwargs is not None and not isinstance(model, str):
@@ -176,10 +178,13 @@ class SFTTrainer(Trainer):
                 "The `model_init_kwargs` will be ignored."
             )
         if isinstance(model, str):
+            print("模型名称：", model)
             model = self._create_model_from_path(model, args)
 
         # PEFT configuration and model wrapping
         if peft_config is not None:
+            print("lora微调模型参数：", model)
+            print("lora微调模型配置：", peft_config)
             model = self._prepare_peft_model(model, peft_config, args)
 
         # Handle the tokenizer
@@ -291,6 +296,7 @@ class SFTTrainer(Trainer):
             return model
 
         # Handle quantized models (QLoRA)
+        # 是否进行低精度训练
         is_qlora = getattr(model, "is_loaded_in_4bit", False) or getattr(model, "is_loaded_in_8bit", False)
 
         is_sharded_qlora = False
@@ -303,10 +309,12 @@ class SFTTrainer(Trainer):
 
         # Prepare model for kbit training if needed
         if is_qlora and not is_sharded_qlora:
+            print("进行低精度训练")
             model = self._prepare_model_for_kbit_training(model, args)
             # Disable gradient checkpointing as it's handled by prepare_model_for_kbit_training
             args = dataclasses.replace(args, gradient_checkpointing=False)
         elif args.gradient_checkpointing:
+            print("进行高精度训练")
             model = self._enable_gradient_checkpointing(model, args)
 
         # Create PEFT model
@@ -316,8 +324,10 @@ class SFTTrainer(Trainer):
             and is_sharded_qlora
         ):
             model = get_peft_model(model, peft_config, autocast_adapter_dtype=False)
+            print("生成低精度微调模型")
         else:
             model = get_peft_model(model, peft_config)
+            print("生成高精度微调模型")
 
         # Handle bf16 casting for 4-bit models
         if args.bf16 and getattr(model, "is_loaded_in_4bit", False) and not is_sharded_qlora:
