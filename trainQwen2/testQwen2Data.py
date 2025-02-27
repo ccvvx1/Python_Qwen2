@@ -1,0 +1,121 @@
+from datasets import load_dataset
+
+# Load the dataset
+# dataset = load_dataset("Magpie-Align/Magpie-Reasoning-V2-250K-CoT-Deepseek-R1-Llama-70B", token="YOUR_HF_TOKEN")
+dataset = load_dataset("Magpie-Align/Magpie-Reasoning-V2-250K-CoT-Deepseek-R1-Llama-70B")
+# dataset = load_dataset("Congliu/Chinese-DeepSeek-R1-Distill-data-110k")
+dataset = dataset["train"]
+
+sub_dataset = dataset.select(range(20000))  # 假设需要处理train分片
+
+# Format the dataset
+def format_instruction(example):
+    return {
+        "text": (
+            "<|user|>\n"
+            f"{example['instruction']}\n"
+            "<|end|>\n"
+            "<|assistant|>\n"
+            f"{example['response']}\n"
+            "<|end|>"
+        )
+    }
+
+formatted_dataset = sub_dataset.map(format_instruction, batched=False, remove_columns=['conversation_id', 'conversations', 'gen_input_configs', 'gen_response_configs', 'intent', 'knowledge', 'difficulty', 'difficulty_generator', 'input_quality', 'quality_explanation', 'quality_generator', 'task_category', 'other_task_category', 'task_category_generator', 'language'])
+# formatted_dataset = sub_dataset.map(format_instruction, batched=False)
+formatted_dataset = formatted_dataset.train_test_split(test_size=0.1)  # 90-10 train-test split
+
+print(formatted_dataset["test"])
+
+
+
+
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+# model_id = "distilbert/distilgpt2"
+# model_id = "google-bert/bert-base-chinese"
+model_id = "../../Python_Qwen2"
+# model_id = "microsoft/phi-3-mini-4k-instruct"
+tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+
+# Add custom tokens
+# CUSTOM_TOKENS = ["", ""]
+# tokenizer.add_special_tokens({"additional_special_tokens": CUSTOM_TOKENS})
+# tokenizer.pad_token = tokenizer.eos_token
+
+# Load model with flash attention
+# model = AutoModelForCausalLM.from_pretrained(
+#     model_id,
+#     trust_remote_code=True,
+#     use_flash_attention_2=False,  # 禁用 FlashAttention
+#     device_map="auto",
+#     torch_dtype=torch.float16,
+#     attn_implementation="flash_attention_2"
+# )
+model = AutoModelForCausalLM.from_pretrained(
+    model_id,
+    trust_remote_code=True,
+    is_decoder=True,
+    use_flash_attention_2=False,  # 禁用 FlashAttention
+    # device_map="auto",
+    torch_dtype=torch.float16
+)
+# model.resize_token_embeddings(len(tokenizer))  # Resize for custom tokens
+
+
+from peft import LoraConfig
+
+peft_config = LoraConfig(
+    r=8,  # Rank of the low-rank matrices
+    lora_alpha=16,  # Scaling factor
+    lora_dropout=0.2,  # Dropout rate
+    # target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Target attention layers
+    # target_modules=["query", "key", "value"],
+    target_modules=["q_proj", "k_proj", "v_proj"],
+    bias="none",  # No bias terms
+    task_type="CAUSAL_LM"  # Task type
+)
+
+
+from transformers import TrainingArguments
+
+training_args = TrainingArguments(
+    output_dir="../../train_qwen2",
+    num_train_epochs=1,
+    per_device_train_batch_size=2,
+    per_device_eval_batch_size=2,
+    gradient_accumulation_steps=4,
+    eval_strategy="epoch",
+    save_strategy="epoch",
+    logging_strategy="steps",
+    logging_steps=2,
+    learning_rate=2e-5,
+    fp16=True,
+    optim="paged_adamw_32bit",
+    max_grad_norm=0.3,
+    warmup_ratio=0.03,
+    lr_scheduler_type="cosine"
+)
+
+from trl import SFTTrainer
+from transformers import DataCollatorForLanguageModeling
+
+# Data collator
+data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+
+# Trainer
+trainer = SFTTrainer(
+    model=model,
+    args=training_args,
+    train_dataset=formatted_dataset["train"],
+    eval_dataset=formatted_dataset["test"],
+    data_collator=data_collator,
+    peft_config=peft_config
+)
+
+
+trainer.train()
+trainer.save_model("../../train_qwen2")
+# model.save_pretrained("./phi-3-deepseek-finetuned-final")
+tokenizer.save_pretrained("../../train_qwen2")
