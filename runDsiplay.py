@@ -16,7 +16,7 @@ os.environ['DISPLAY'] = ':1'
 
 
 
-# Xvfb :99 -screen 0 1024x768x16 &> /dev/null &
+# Xvfb :99 -screen 0 1924x1068x16+60 &> /dev/null &
 # x11vnc -display :99 -forever -shared -noxdamage
 
 # curl -L https://www.cpolar.com/static/downloads/install-release-cpolar.sh | sudo bash
