@@ -22,4 +22,4 @@ os.environ['DISPLAY'] = ':1'
 # curl -L https://www.cpolar.com/static/downloads/install-release-cpolar.sh | sudo bash
 # cpolar tcp 5900
 
-# google-chrome --no-sandbox --display=:99
+# google-chrome --no-sandbox --display=:99 --window-size=1280,1024
