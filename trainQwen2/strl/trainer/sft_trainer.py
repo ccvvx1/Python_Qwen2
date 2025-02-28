@@ -34,10 +34,11 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
-    Trainer,
+    # Trainer,
     TrainingArguments,
     is_wandb_available,
 )
+from trainer import Trainer
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import EvalPrediction
 from transformers.utils import is_liger_kernel_available, is_peft_available
