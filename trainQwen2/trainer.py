@@ -109,7 +109,7 @@ from transformers.trainer_pt_utils import (
     reissue_pt_warnings,
     remove_dummy_checkpoint,
 )
-from transformers.trainer_utils import (
+from trainer_utils import (
     PREFIX_CHECKPOINT_DIR,
     BestRun,
     EvalLoopOutput,
@@ -134,6 +134,7 @@ from transformers.trainer_utils import (
     set_seed,
     speed_metrics,
 )
+# from trainer_utils import TrainerMemoryTracker
 from transformers.training_args import OptimizerNames, ParallelMode, TrainingArguments
 from transformers.utils import (
     ADAPTER_CONFIG_NAME,
@@ -997,8 +998,10 @@ class Trainer:
         train_dataset = self.train_dataset
         data_collator = self.data_collator
         if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
+            print("处理训练数据")
             train_dataset = self._remove_unused_columns(train_dataset, description="training")
         else:
+            print("处理数据集合")
             data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
 
         dataloader_params = {
@@ -1008,12 +1011,14 @@ class Trainer:
             "pin_memory": self.args.dataloader_pin_memory,
             "persistent_workers": self.args.dataloader_persistent_workers,
         }
+        print("数据加载器的参数：", dataloader_params)
 
         if not isinstance(train_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = self._get_train_sampler()
             dataloader_params["drop_last"] = self.args.dataloader_drop_last
             dataloader_params["worker_init_fn"] = seed_worker
             dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
+            print("修改数据加载器的部分参数")
 
         return self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
 
@@ -1717,8 +1722,10 @@ class Trainer:
     def _hp_search_setup(self, trial: Union["optuna.Trial", Dict[str, Any]]):
         """HP search setup code"""
         self._trial = trial
+        print("开始内容搜索...")
 
         if self.hp_search_backend is None or trial is None:
+            print("内容搜索返回方式一")
             return
         if self.hp_search_backend == HPSearchBackend.OPTUNA:
             params = self.hp_space(trial)
@@ -1768,6 +1775,7 @@ class Trainer:
             # Simply calling `_reset_state` is enough and doesn't need a version pin.
             AcceleratorState()._reset_state()
 
+        print("进行加速和进行进展...")
         self.create_accelerator_and_postprocess()
 
     def _report_to_hp_search(self, trial: Union["optuna.Trial", Dict[str, Any]], step: int, metrics: Dict[str, float]):
@@ -2090,10 +2098,12 @@ class Trainer:
             kwargs (`Dict[str, Any]`, *optional*):
                 Additional keyword arguments used to hide deprecated arguments
         """
+        print("开始训练...")
         if resume_from_checkpoint is False:
             resume_from_checkpoint = None
 
         # memory metrics - must set up as early as possible
+        # 开始内存追踪
         self._memory_tracker.start()
 
         args = self.args
@@ -2102,15 +2112,19 @@ class Trainer:
 
         # Attach NEFTune hooks if necessary
         if self.neftune_noise_alpha is not None:
+            print("特殊函数：", self._activate_neftune)
             self.model = self._activate_neftune(self.model)
+            print("对应的模型：", self.model)
 
         # do_train is not a reliable argument, as it might not be set and .train() still called, so
         # the following is a workaround:
         if (args.fp16_full_eval or args.bf16_full_eval) and not args.do_train and not self.is_model_parallel:
+            print("转成高精度模型")
             self._move_model_to_device(self.model, args.device)
 
         if "model_path" in kwargs:
             resume_from_checkpoint = kwargs.pop("model_path")
+            print("需要复原的权重：", resume_from_checkpoint)
             warnings.warn(
                 "`model_path` is deprecated and will be removed in a future version. Use `resume_from_checkpoint` "
                 "instead.",
@@ -2125,6 +2139,7 @@ class Trainer:
         # Model re-init
         model_reloaded = False
         if self.model_init is not None:
+            print("进行模型初始化")
             # Seed must be set before instantiating the model when using model_init.
             enable_full_determinism(self.args.seed) if self.args.full_determinism else set_seed(self.args.seed)
             self.model = self.call_model_init(trial)
@@ -2134,13 +2149,17 @@ class Trainer:
 
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
+            print("获取最新的权重")
             resume_from_checkpoint = get_last_checkpoint(args.output_dir)
             if resume_from_checkpoint is None:
                 raise ValueError(f"No valid checkpoint found in output directory ({args.output_dir})")
 
         if resume_from_checkpoint is not None:
             if not is_sagemaker_mp_enabled() and not self.is_deepspeed_enabled and not self.is_fsdp_enabled:
+                print("加载权重")
                 self._load_from_checkpoint(resume_from_checkpoint)
+
+            # 从json配置文件加载训练的状态
             # In case of repeating the find_executable_batch_size, set `self._train_batch_size` properly
             state = TrainerState.load_from_json(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
             if state.train_batch_size is not None:
@@ -2149,9 +2168,11 @@ class Trainer:
         # If model was re-initialized, put it on the right device and update self.model_wrapped
         if model_reloaded:
             if self.place_model_on_device:
+                print("迁移模型")
                 self._move_model_to_device(self.model, args.device)
             self.model_wrapped = self.model
 
+        print("开始循环训练...")
         inner_training_loop = find_executable_batch_size(
             self._inner_training_loop, self._train_batch_size, args.auto_find_batch_size
         )
@@ -2178,6 +2199,7 @@ class Trainer:
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
     ):
+        print("开始循环处理数据...")
         self.accelerator.free_memory()
         self._train_batch_size = batch_size
         if self.args.auto_find_batch_size:
