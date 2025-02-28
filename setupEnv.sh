@@ -11,3 +11,5 @@ curl ipinfo.io/ip         # 结构化输出
 curl api.ipify.org        # 纯文本响应
 curl -4/-6 ident.me       # 指定 IPv4 或 IPv6
 
+git config --global user.name mw
+git config --global user.email 694497013@qq.com
