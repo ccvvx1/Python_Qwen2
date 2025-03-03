@@ -13,3 +13,14 @@ curl -4/-6 ident.me       # 指定 IPv4 或 IPv6
 
 git config --global user.name mw
 git config --global user.email 694497013@qq.com
+
+sudo apt update && sudo apt install language-pack-zh-hans language-pack-gnome-zh-hans
+
+export LANG=zh_CN.UTF-8
+export LANGUAGE=zh_CN:zh:en_US:en
+
+apt install libxcb-cursor0  # 安装核心依赖
+apt install libxcb-xinerama0 libxcb-randr0 libxcb-xinput0  # 安装其他常见xcb依赖
+apt install libxkbcommon-x11-0  # 输入支持库
+apt install xdotool
+

@@ -23,4 +23,8 @@ os.environ['DISPLAY'] = ':1'
 # cpolar tcp 5900
 # cpolar authtoken ZDg0ZjVkZWEtYTMzZS00MTY2LTk2MmYtMGY4Njk4ZTg4ODA
 
+# export LANG=zh_CN.UTF-8
+# export LANGUAGE=zh_CN:zh:en_US:en
+
+
 # google-chrome --no-sandbox --display=:99 --window-size=1280,1024
