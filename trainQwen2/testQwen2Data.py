@@ -37,6 +37,7 @@ import torch
 # model_id = "google-bert/bert-base-chinese"
 model_id = "../../Python_Qwen2"
 # model_id = "microsoft/phi-3-mini-4k-instruct"
+print("通过配置构建标签生成需要的函数：")
 tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
 # Add custom tokens
@@ -101,7 +102,8 @@ training_args = TrainingArguments(
 from strl import SFTTrainer
 from transformers import DataCollatorForLanguageModeling
 
-print("自定义加载数据：")
+print("自定义加载数据：", DataCollatorForLanguageModeling)
+print("标签：", tokenizer)
 # Data collator
 data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
