@@ -26,8 +26,8 @@ import math
 import re
 import string
 
-from ...models.bert import BasicTokenizer
-from ...utils import logging
+from transformers.models.bert import BasicTokenizer
+from transformers.utils import logging
 
 
 logger = logging.get_logger(__name__)

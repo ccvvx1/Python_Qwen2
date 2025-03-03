@@ -21,9 +21,9 @@ from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
 
 import numpy as np
 
-from ..models.bert import BertTokenizer, BertTokenizerFast
-from ..tokenization_utils_base import PreTrainedTokenizerBase
-from ..utils import PaddingStrategy
+from transformers.models.bert import BertTokenizer, BertTokenizerFast
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from transformers.utils import PaddingStrategy
 
 
 InputDataClass = NewType("InputDataClass", Any)
@@ -37,6 +37,7 @@ DataCollator = NewType("DataCollator", Callable[[List[InputDataClass]], Dict[str
 
 class DataCollatorMixin:
     def __call__(self, features, return_tensors=None):
+        print("开始执行基本筛选器代码")
         if return_tensors is None:
             return_tensors = self.return_tensors
         if return_tensors == "tf":
@@ -715,6 +716,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
     return_tensors: str = "pt"
 
     def __post_init__(self):
+        print("开始执行筛选器代码")
         if self.mlm and self.tokenizer.mask_token is None:
             raise ValueError(
                 "This tokenizer does not have a mask token which is necessary for masked language modeling. "
@@ -727,6 +729,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
 
     @staticmethod
     def tf_bernoulli(shape, probability):
+        print("筛选器添加部分信息")
         import tensorflow as tf
 
         prob_matrix = tf.fill(shape, probability)
@@ -739,6 +742,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
         """
         import tensorflow as tf
+        print("筛选器遮罩部分信息")
 
         mask_token_id = tf.cast(mask_token_id, inputs.dtype)
 
@@ -765,6 +769,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
 
     def tf_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
         import tensorflow as tf
+        print("触发筛选器tf回调函数")
 
         # Handle dict or lists with proper padding and conversion to tensor.
         if isinstance(examples[0], Mapping):
@@ -806,6 +811,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
 
     def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
         # Handle dict or lists with proper padding and conversion to tensor.
+        print("触发筛选器torch回调函数")
         if isinstance(examples[0], Mapping):
             batch = pad_without_fast_tokenizer_warning(
                 self.tokenizer, examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of
@@ -832,6 +838,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
         """
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
         """
+        print("返回torch遮罩的口令")
         import torch
 
         labels = inputs.clone()
@@ -862,6 +869,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
         return inputs, labels
 
     def numpy_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
+        print("触发numpy回调")
         # Handle dict or lists with proper padding and conversion to tensor.
         if isinstance(examples[0], Mapping):
             batch = pad_without_fast_tokenizer_warning(
@@ -889,6 +897,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
         """
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
         """
+        print("通过numpy对口令进行遮罩")
         labels = np.copy(inputs)
         # We sample a few tokens in each sequence for MLM training (with probability `self.mlm_probability`)
         probability_matrix = np.full(labels.shape, self.mlm_probability)

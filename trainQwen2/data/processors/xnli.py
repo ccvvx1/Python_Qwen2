@@ -17,7 +17,7 @@
 
 import os
 
-from ...utils import logging
+from transformers.utils import logging
 from .utils import DataProcessor, InputExample
 
 

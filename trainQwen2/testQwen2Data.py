@@ -100,7 +100,7 @@ training_args = TrainingArguments(
 )
 
 from strl import SFTTrainer
-from transformers import DataCollatorForLanguageModeling
+from data import DataCollatorForLanguageModeling
 
 print("自定义加载数据：", DataCollatorForLanguageModeling)
 print("标签：", tokenizer)

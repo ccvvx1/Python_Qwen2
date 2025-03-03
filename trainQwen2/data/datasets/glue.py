@@ -23,10 +23,10 @@ import torch
 from filelock import FileLock
 from torch.utils.data import Dataset
 
-from ...tokenization_utils_base import PreTrainedTokenizerBase
-from ...utils import logging
-from ..processors.glue import glue_convert_examples_to_features, glue_output_modes, glue_processors
-from ..processors.utils import InputFeatures
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from transformers.utils import logging
+from data.processors.glue import glue_convert_examples_to_features, glue_output_modes, glue_processors
+from data.processors.utils import InputFeatures
 
 
 logger = logging.get_logger(__name__)
