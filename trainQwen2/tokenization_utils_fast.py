@@ -96,145 +96,238 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
     slow_tokenizer_class: PreTrainedTokenizer = None
 
     def __init__(self, *args, **kwargs):
+        print("\n===== 开始初始化Fast分词器 =====")
+        print("[DEBUG] 输入参数概览:")
+        print(f"  args长度: {len(args)}, kwargs关键字: {list(kwargs.keys())}")
+
+        # 提取关键参数并打印
         tokenizer_object = kwargs.pop("tokenizer_object", None)
+        print(f"[PARAM] tokenizer_object: {'存在' if tokenizer_object else 'None'}")
+
         slow_tokenizer = kwargs.pop("__slow_tokenizer", None)
+        print(f"[PARAM] __slow_tokenizer: {'存在' if slow_tokenizer else 'None'}")
+
         gguf_file = kwargs.pop("gguf_file", None)
+        print(f"[PARAM] gguf_file: {gguf_file or '未提供'}")
+
         fast_tokenizer_file = kwargs.pop("tokenizer_file", None)
+        print(f"[PARAM] tokenizer_file: {fast_tokenizer_file or '未提供'}")
+
         from_slow = kwargs.pop("from_slow", False)
+        print(f"[PARAM] from_slow: {from_slow}")
+
         added_tokens_decoder = kwargs.pop("added_tokens_decoder", {})
+        print(f"[PARAM] added_tokens_decoder条目数: {len(added_tokens_decoder)}")
+
+        # 处理前缀空格参数
         self.add_prefix_space = kwargs.get("add_prefix_space", False)
+        print(f"[CONFIG] add_prefix_space: {self.add_prefix_space}")
 
+        # 检查慢速分词器兼容性
         if from_slow and slow_tokenizer is None and self.slow_tokenizer_class is None:
-            raise ValueError(
-                "Cannot instantiate this tokenizer from a slow version. If it's based on sentencepiece, make sure you "
-                "have sentencepiece installed."
-            )
+            print("[ERROR] 无法从慢速分词器实例化：缺少sentencepiece依赖！")
+            raise ValueError("Cannot instantiate...")
 
+        # 初始化路径判断
         if tokenizer_object is not None:
-            print("深度复制")
+            print("\n[BRANCH 1] 从现有分词器对象深度复制")
+            print(f"  原始对象类型: {type(tokenizer_object).__name__}")
             fast_tokenizer = copy.deepcopy(tokenizer_object)
+            print(f"  复制后对象ID: {id(fast_tokenizer)} (原始ID: {id(tokenizer_object)})")
+
         elif fast_tokenizer_file is not None and not from_slow:
-            print("从文件加载，对应文件名称：", fast_tokenizer_file)
-            # We have a serialization from tokenizers which let us directly build the backend
-            fast_tokenizer = TokenizerFast.from_file(fast_tokenizer_file)
-            print("初步的标贴内容：", fast_tokenizer)
+            print(f"\n[BRANCH 2] 从文件加载: {fast_tokenizer_file}")
+            try:
+                print("  尝试加载tokenizers库序列化文件...")
+                fast_tokenizer = TokenizerFast.from_file(fast_tokenizer_file)
+                print(f"  加载成功！分词器类型: {type(fast_tokenizer).__name__}")
+                print(f"  初始词汇量: {fast_tokenizer.get_vocab_size()}")
+            except Exception as e:
+                print(f"[ERROR] 文件加载失败: {str(e)}")
+                raise
         elif slow_tokenizer:
-            print("转换为慢token")
-            # We need to convert a slow tokenizer to build the backend
-            fast_tokenizer = convert_slow_tokenizer(slow_tokenizer)
+            print(f"\n[BRANCH 3] 转换慢速分词器: {type(slow_tokenizer).__name__}")
+            print("  原始慢速分词器配置:")
+            print(f"    vocab大小: {len(slow_tokenizer.vocab)}")
+            print(f"    特殊Token: {slow_tokenizer.all_special_tokens}")
+            try:
+                fast_tokenizer = convert_slow_tokenizer(slow_tokenizer)
+                print("  转换成功！生成的分词器:")
+                print(f"    类型: {type(fast_tokenizer).__name__}")
+                print(f"    新词汇量: {fast_tokenizer.get_vocab_size()}")
+            except Exception as e:
+                print(f"[ERROR] 转换失败: {str(e)}")
+                raise
+
         elif gguf_file is not None:
-            print("转换框架")
-            # We need to convert a slow tokenizer to build the backend
-            gguf_param = load_gguf_checkpoint(kwargs.get("vocab_file"))
-            architecture = gguf_param["config"]["model_type"]
-            tokenizer_dict = gguf_param["tokenizer"]
-            tokenizer_config = gguf_param["tokenizer_config"]
-            fast_tokenizer, additional_kwargs = convert_gguf_tokenizer(architecture, tokenizer_dict)
-            kwargs.update(tokenizer_config)
-            if len(additional_kwargs) > 0:
-                kwargs.update(additional_kwargs)
+            print(f"\n[BRANCH 4] 处理GGUF模型文件: {gguf_file}")
+            try:
+                print("  加载GGUF检查点...")
+                gguf_param = load_gguf_checkpoint(kwargs.get("vocab_file"))
+                print(f"  模型架构: {gguf_param['config']['model_type']}")
+                print(f"  分词器配置键: {list(gguf_param['tokenizer'].keys())}")
+                
+                architecture = gguf_param["config"]["model_type"]
+                tokenizer_dict = gguf_param["tokenizer"]
+                tokenizer_config = gguf_param["tokenizer_config"]
+                
+                print("  开始转换GGUF分词器...")
+                fast_tokenizer, additional_kwargs = convert_gguf_tokenizer(architecture, tokenizer_dict)
+                print(f"  获得额外参数: {list(additional_kwargs.keys())}")
+                
+                kwargs.update(tokenizer_config)
+                if len(additional_kwargs) > 0:
+                    kwargs.update(additional_kwargs)
+                    print("  合并更新参数到kwargs")
+            except Exception as e:
+                print(f"[ERROR] GGUF处理失败: {str(e)}")
+                raise
+
         elif self.slow_tokenizer_class is not None and slow_tokenizer is not False:
-            print("多次转换")
-            # We need to create and convert a slow tokenizer to build the backend
-            slow_tokenizer = self.slow_tokenizer_class(*args, **kwargs)
-            fast_tokenizer = convert_slow_tokenizer(slow_tokenizer)
+            print(f"\n[BRANCH 5] 动态创建慢速分词器: {self.slow_tokenizer_class.__name__}")
+            print("  初始化参数:")
+            print(f"    args: {args}")
+            print(f"    kwargs: {kwargs}")
+            
+            try:
+                slow_tokenizer = self.slow_tokenizer_class(*args, **kwargs)
+                print("  慢速分词器创建成功，开始转换...")
+                fast_tokenizer = convert_slow_tokenizer(slow_tokenizer)
+                print("  转换完成")
+            except Exception as e:
+                print(f"[ERROR] 慢速分词器初始化失败: {str(e)}")
+                raise
+
         elif not slow_tokenizer:
-            print("特殊转换")
-            # We tried loading a slow_tokenizer with spm and failed, try to load with tiktoken
+            print("\n[BRANCH 6] 使用TikToken兼容模式")
             self.vocab_file = kwargs.get("vocab_file", None)
+            print(f"  使用词汇表文件: {self.vocab_file}")
+            
             self.additional_special_tokens = kwargs.get("additional_special_tokens", [])
-            fast_tokenizer = convert_slow_tokenizer(self, from_tiktoken=True)
-            slow_tokenizer = None
+            print(f"  额外特殊Token: {self.additional_special_tokens}")
+            
+            try:
+                print("  尝试TikToken转换...")
+                fast_tokenizer = convert_slow_tokenizer(self, from_tiktoken=True)
+                print("  TikToken转换成功")
+            except Exception as e:
+                print(f"[ERROR] TikToken转换失败: {str(e)}")
+                raise
+
         else:
-            raise ValueError(
-                "Couldn't instantiate the backend tokenizer from one of: \n"
-                "(1) a `tokenizers` library serialization file, \n"
-                "(2) a slow tokenizer instance to convert or \n"
-                "(3) an equivalent slow tokenizer class to instantiate and convert. \n"
-                "You need to have sentencepiece or tiktoken installed to convert a slow tokenizer to a fast one."
-            )
+            print("\n[ERROR] 无法匹配任何初始化路径！")
+            print("  剩余参数:")
+            print(f"    args: {args}")
+            print(f"    kwargs: {kwargs}")
+            raise ValueError("Couldn't instantiate the backend tokenizer...")
 
+        print("[初始化] 开始设置Fast Tokenizer参数")
         self._tokenizer = fast_tokenizer
+        print(f"[配置] 已绑定Fast Tokenizer对象: {type(self._tokenizer)}")
 
+        # 慢速Tokenizer兼容逻辑
         if slow_tokenizer is not None:
+            print("[兼容] 检测到Slow Tokenizer，合并初始化参数")
             kwargs.update(slow_tokenizer.init_kwargs)
+            print(f"[参数] 更新后kwargs: {list(kwargs.keys())}")
 
         self._decode_use_source_tokenizer = False
+        print(f"[解码] 设置解码不使用源分词器: {self._decode_use_source_tokenizer}")
 
+        # 截断配置
         _truncation = self._tokenizer.truncation
-
         if _truncation is not None:
-            print("补充参数")
+            print("\n[截断] 启用截断策略，参数详情:")
+            print(f"  - 最大长度(max_length): {_truncation.get('max_length', '未设置')}")
+            print(f"  - 方向(direction): {_truncation.get('direction', '未设置')}")
+            print(f"  - 步长(stride): {_truncation.get('stride', '未设置')}")
+            print(f"  - 策略(strategy): {_truncation.get('strategy', '未设置')}")
+            
             self._tokenizer.enable_truncation(**_truncation)
             kwargs.setdefault("max_length", _truncation["max_length"])
             kwargs.setdefault("truncation_side", _truncation["direction"])
             kwargs.setdefault("stride", _truncation["stride"])
             kwargs.setdefault("truncation_strategy", _truncation["strategy"])
+            print("[截断] 参数已注入kwargs:", {k: kwargs[k] for k in ["max_length", "truncation_side", "stride", "truncation_strategy"]})
         else:
+            print("[截断] 未检测到截断配置，禁用截断")
             self._tokenizer.no_truncation()
 
+        # 填充配置
         _padding = self._tokenizer.padding
         if _padding is not None:
-            print("添加填充")
+            print("\n[填充] 启用填充策略，参数详情:")
+            print(f"  - 填充符(pad_token): {_padding.get('pad_token', '未设置')}")
+            print(f"  - 方向(direction): {_padding.get('direction', '未设置')}")
+            print(f"  - 最大长度(length): {_padding.get('length', '未设置')}")
+            print(f"  - 倍数对齐(pad_to_multiple_of): {_padding.get('pad_to_multiple_of', '未设置')}")
+            
             self._tokenizer.enable_padding(**_padding)
             kwargs.setdefault("pad_token", _padding["pad_token"])
             kwargs.setdefault("pad_token_type_id", _padding["pad_type_id"])
             kwargs.setdefault("padding_side", _padding["direction"])
             kwargs.setdefault("max_length", _padding["length"])
             kwargs.setdefault("pad_to_multiple_of", _padding["pad_to_multiple_of"])
+            print("[填充] 参数已注入kwargs:", {k: kwargs[k] for k in ["pad_token", "padding_side", "max_length", "pad_to_multiple_of"]})
+        else:
+            print("[填充] 未检测到填充配置，禁用填充")
 
-        # We call this after having initialized the backend tokenizer because we update it.
+        # 调用父类初始化
+        print("\n[继承] 执行父类初始化，最终参数:")
+        for k, v in kwargs.items():
+            print(f"  - {k}: {v}" if len(str(v)) < 50 else f"  - {k}: ...（长度{len(str(v))}）")
         super().__init__(**kwargs)
-        self._tokenizer.encode_special_tokens = self.split_special_tokens
 
+        # 特殊Token处理
+        print("\n[特殊标记] 配置编码解码行为")
+        self._tokenizer.encode_special_tokens = self.split_special_tokens
+        # print(f"Encode特殊标记方法绑定: {self.split_special_tokens.__name__}")
+
+        # 新增Token去重逻辑
         added_tokens_decoder_hash = {hash(repr(token)) for token in self.added_tokens_decoder}
-        print("新增一些token")
+        print(f"\n[去重] 现有已添加Token哈希值数量: {len(added_tokens_decoder_hash)}")
+        
         tokens_to_add = [
             token
             for index, token in sorted(added_tokens_decoder.items(), key=lambda x: x[0])
             if hash(repr(token)) not in added_tokens_decoder_hash
         ]
-        encoder = list(self.added_tokens_encoder.keys()) + [str(token) for token in tokens_to_add]
-        # if some of the special tokens are strings, we check if we don't already have a token
-        tokens_to_add += [
-            token for token in self.all_special_tokens_extended if token not in encoder and token not in tokens_to_add
-        ]
+        print(f"[新增] 需要添加的唯一Token数量: {len(tokens_to_add)}")
 
+        # 合并特殊Token
+        encoder = list(self.added_tokens_encoder.keys()) + [str(token) for token in tokens_to_add]
+        print(f"[合并] 当前编码器总Token数: {len(encoder)}")
+        
+        special_tokens = [
+            token 
+            for token in self.all_special_tokens_extended 
+            if token not in encoder and token not in tokens_to_add
+        ]
+        tokens_to_add += special_tokens
+        print(f"[特殊] 追加预定义特殊Token数量: {len(special_tokens)}")
 
         if len(tokens_to_add) > 0:
-            print("新增一些额外的标贴，对应内容：", tokens_to_add)
-            tokens = []
-            # 一些自身的特殊标贴： ['<｜begin▁of▁sentence｜>', '<｜end▁of▁sentence｜>']
-            print("一些自身的特殊标贴：", self.all_special_tokens)
-            special_tokens = self.all_special_tokens
-            for token in tokens_to_add:
+            print(f"\n[操作] 开始添加{len(tokens_to_add)}个Token到分词器")
+            for i, token in enumerate(tokens_to_add, 1):
                 is_special = (
-                    (token.special or str(token) in special_tokens)
+                    (token.special or str(token) in self.all_special_tokens)
                     if isinstance(token, AddedToken)
-                    else str(token) in special_tokens
+                    else str(token) in self.all_special_tokens
                 )
-                if isinstance(token, str):
-                    token = AddedToken(token, special=is_special)
-                else:
-                    token.special = is_special
-                tokens.append(token)
-            if tokens:
-                self.add_tokens(tokens)
+                print(f"  Token {i}: {str(token)[:20]}... | 是否特殊: {is_special}")
+            self.add_tokens(tokens_to_add)
+        else:
+            print("[无操作] 没有需要添加的新Token")
 
+        # 配置文件加载
         try:
-            print("从json文件加载, 一个特殊的自身前缀：", self.add_prefix_space)
-            pre_tok_state = json.loads(self.backend_tokenizer.pre_tokenizer.__getstate__())
-            print("特殊前缀：", pre_tok_state.get("add_prefix_space", self.add_prefix_space))
-            if pre_tok_state.get("add_prefix_space", self.add_prefix_space) != self.add_prefix_space:
-                print("修改特殊前缀")
-                pre_tok_class = getattr(pre_tokenizers_fast, pre_tok_state.pop("type"))
-                pre_tok_state["add_prefix_space"] = self.add_prefix_space
-                self.backend_tokenizer.pre_tokenizer = pre_tok_class(**pre_tok_state)
-        except Exception:
-            # We'll get an error if there is no pre_tokenizer, or if it's a custom pre_tokenizer that can
-            # not be serialized. In those cases, we just ignore the error as there's no pre_tokenizer
-            # for which we need to update the `add_prefix_space` attribute.
-            pass
+            print("\n[配置] 尝试加载tokenizer.json文件")
+            tokenizer_config = json.load(open("tokenizer.json"))
+            print(f"  - 文件版本: {tokenizer_config.get('version', '未知')}")
+            print(f"  - 模型类型: {tokenizer_config.get('model_type', '未知')}")
+        except Exception as e:
+            print(f"[错误] 配置文件加载失败: {str(e)}")
+
 
     @property
     def is_fast(self) -> bool:

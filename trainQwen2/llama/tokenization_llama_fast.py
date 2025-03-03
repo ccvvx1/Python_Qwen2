@@ -185,27 +185,56 @@ class LlamaTokenizerFast(PreTrainedTokenizerFast):
         """
         Updates the underlying post processor with the current `bos_token` and `eos_token`.
         """
+        print("\n===== 开始更新后处理器 =====")
+        
+        # 处理 BOS Token
         bos = self.bos_token
         bos_token_id = self.bos_token_id
+        print(f"[DEBUG] BOS 配置检查 | add_bos_token={self.add_bos_token}, bos_token='{bos}', bos_token_id={bos_token_id}")
+        
         if bos is None and self.add_bos_token:
+            print("[ERROR] 配置冲突：启用了 add_bos_token 但未定义 bos_token！")
             raise ValueError("add_bos_token = True but bos_token = None")
-
+            
+        # 处理 EOS Token
         eos = self.eos_token
         eos_token_id = self.eos_token_id
+        print(f"[DEBUG] EOS 配置检查 | add_eos_token={self.add_eos_token}, eos_token='{eos}', eos_token_id={eos_token_id}")
+        
         if eos is None and self.add_eos_token:
+            print("[ERROR] 配置冲突：启用了 add_eos_token 但未定义 eos_token！")
             raise ValueError("add_eos_token = True but eos_token = None")
-
-        single = f"{(bos+':0 ') if self.add_bos_token else ''}$A:0{(' '+eos+':0') if self.add_eos_token else ''}"
-        pair = f"{single}{(' '+bos+':1') if self.add_bos_token else ''} $B:1{(' '+eos+':1') if self.add_eos_token else ''}"
-
+            
+        # 构建模板
+        single_bos_part = f"{bos}:0 " if self.add_bos_token else ""
+        single_eos_part = f" {eos}:0" if self.add_eos_token else ""
+        single = f"{single_bos_part}$A:0{single_eos_part}"
+        print(f"[DEBUG] 单序列模板生成 | 模板结构 = '{single}'")
+        
+        pair_bos_part = f" {bos}:1" if self.add_bos_token else ""
+        pair_eos_part = f" {eos}:1" if self.add_eos_token else ""
+        pair = f"{single}{pair_bos_part} $B:1{pair_eos_part}"
+        print(f"[DEBUG] 双序列模板生成 | 模板结构 = '{pair}'")
+        
+        # 注册特殊Token
         special_tokens = []
         if self.add_bos_token:
             special_tokens.append((bos, bos_token_id))
+            print(f"[DEBUG] 注册BOS特殊Token | token='{bos}', id={bos_token_id}")
         if self.add_eos_token:
             special_tokens.append((eos, eos_token_id))
+            print(f"[DEBUG] 注册EOS特殊Token | token='{eos}', id={eos_token_id}")
+            
+        print(f"[DEBUG] 最终特殊Token列表: {special_tokens}")
+        
+        # 更新后处理器
         self._tokenizer.post_processor = processors.TemplateProcessing(
             single=single, pair=pair, special_tokens=special_tokens
         )
+        print(f"[SUCCESS] 后处理器更新完成 | 单序列模板 = '{single}'")
+        print(f"          | 双序列模板 = '{pair}'")
+        print(f"          | 特殊Token数量 = {len(special_tokens)}")
+        print("===== 后处理器更新结束 =====\n")
 
     @property
     def add_eos_token(self):
