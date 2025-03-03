@@ -619,7 +619,7 @@ class PreTrainedTokenizer(PreTrainedTokenizerBase):
         token_ids_1 = []
         return len(self.build_inputs_with_special_tokens(token_ids_0, token_ids_1 if pair else None))
 
-    def tokenize(self, text: TextInput, **kwargs) -> List[str]:
+    def tokenize1(self, text: TextInput, **kwargs) -> List[str]:
         """
         Converts a string into a sequence of tokens, using the tokenizer.
 
@@ -699,7 +699,7 @@ class PreTrainedTokenizer(PreTrainedTokenizerBase):
         # ["This", " is", " something", "<special_token_1>", "else"]
         return tokenized_text
 
-    def _tokenize(self, text, **kwargs):
+    def _tokenize1(self, text, **kwargs):
         """
         Converts a string into a sequence of tokens (string), using the tokenizer. Split in words for word-based
         vocabulary or sub-words for sub-word-based vocabularies (BPE/SentencePieces/WordPieces).

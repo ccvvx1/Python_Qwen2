@@ -272,6 +272,7 @@ def maybe_apply_chat_template(
     if is_conversational(example):
         return apply_chat_template(example, tokenizer, tools)
     else:
+        print("直接返回模板数据")
         return example
 
 

@@ -227,6 +227,7 @@ class BatchEncoding(UserDict):
         n_sequences: Optional[int] = None,
     ):
         super().__init__(data)
+        print("进行基础加密")
 
         if isinstance(encoding, EncodingFast):
             encoding = [encoding]
@@ -1387,7 +1388,7 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
 
     Handles shared (mostly boiler plate) methods for those two classes.
     """
-
+    print("基础设计")
     vocab_files_names: Dict[str, str] = {}
     pretrained_vocab_files_map: Dict[str, Dict[str, str]] = {}
     _auto_class: Optional[str] = None
@@ -2837,6 +2838,7 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
                 list of strings (pretokenized string). If the sequences are provided as list of strings (pretokenized),
                 you must set `is_split_into_words=True` (to lift the ambiguity with a batch of sequences).
         """
+        print("调用处理函数")
         # To avoid duplicating
         all_kwargs = {
             "add_special_tokens": add_special_tokens,
@@ -2903,6 +2905,7 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
         split_special_tokens: bool = False,
         **kwargs,
     ) -> BatchEncoding:
+        print("触发一次")
         # Input type checking for clearer error
         def _is_valid_text_input(t):
             if isinstance(t, str):
@@ -3286,6 +3289,7 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
             verbose (`bool`, *optional*, defaults to `True`):
                 Whether or not to print more information and warnings.
         """
+        print("进行填充")
         if self.__class__.__name__.endswith("Fast"):
             if not self.deprecation_warnings.get("Asking-to-pad-a-fast-tokenizer", False):
                 logger.warning_advice(
@@ -3465,7 +3469,7 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
                 Tokenized input ids of the second sequence. Can be obtained from a string by chaining the `tokenize`
                 and `convert_tokens_to_ids` methods.
         """
-
+        print("进行模型准备")
         # Backward compatibility for 'truncation_strategy', 'pad_to_max_length'
         padding_strategy, truncation_strategy, max_length, kwargs = self._get_padding_truncation_strategies(
             padding=padding,
@@ -3724,6 +3728,7 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
             return_attention_mask:
                 (optional) Set to False to avoid returning attention mask (default: set to model specifics)
         """
+        print("进行填充")
         # Load from model defaults
         if return_attention_mask is None:
             return_attention_mask = "attention_mask" in self.model_input_names

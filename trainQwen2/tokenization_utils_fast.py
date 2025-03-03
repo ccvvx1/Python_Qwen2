@@ -386,6 +386,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         """
         Size of the full vocabulary with the added tokens.
         """
+        print("加密中=========")
         return self._tokenizer.get_vocab_size(with_added_tokens=True)
 
     @property
@@ -393,6 +394,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         """
         `tokenizers.implementations.BaseTokenizer`: The Rust tokenizer used as a backend.
         """
+        print("加密中=========")
         return self._tokenizer
 
     @property
@@ -422,6 +424,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
 
         Output shape: (overflows, sequence length)
         """
+        print("进行文字加密")
         if return_token_type_ids is None:
             return_token_type_ids = "token_type_ids" in self.model_input_names
         if return_attention_mask is None:
@@ -460,21 +463,25 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         Returns:
             `int` or `List[int]`: The token id or list of token ids.
         """
+        print("加密中=========")
         if isinstance(tokens, str):
             return self._convert_token_to_id_with_added_voc(tokens)
 
         return [self._convert_token_to_id_with_added_voc(token) for token in tokens]
 
     def _convert_token_to_id_with_added_voc(self, token: str) -> int:
+        print("加密中=========")
         index = self._tokenizer.token_to_id(token)
         if index is None:
             return self.unk_token_id
         return index
 
     def _convert_id_to_token(self, index: int) -> Optional[str]:
+        print("加密中=========")
         return self._tokenizer.id_to_token(int(index))
 
     def _add_tokens(self, new_tokens: List[Union[str, AddedToken]], special_tokens=False) -> int:
+        print("加密中=========")
         if special_tokens:
             return self._tokenizer.add_special_tokens(new_tokens)
 
@@ -517,6 +524,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         Returns:
             `str` or `List[str]`: The decoded token(s).
         """
+        print("进行转换")
         if isinstance(ids, int):
             return self._tokenizer.id_to_token(ids)
         tokens = []
@@ -527,7 +535,8 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             tokens.append(self._tokenizer.id_to_token(index))
         return tokens
 
-    def tokenize(self, text: str, pair: Optional[str] = None, add_special_tokens: bool = False, **kwargs) -> List[str]:
+    def tokenize1(self, text: str, pair: Optional[str] = None, add_special_tokens: bool = False, **kwargs) -> List[str]:
+        print("生成口令")
         return self.encode_plus(text=text, text_pair=pair, add_special_tokens=add_special_tokens, **kwargs).tokens()
 
     def set_truncation_and_padding(
@@ -563,6 +572,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
                 The side on which the model should have padding applied. Should be selected between ['right', 'left'].
                 Default value is picked from the class attribute of the same name.
         """
+        print("加密中=========")
         _truncation = self._tokenizer.truncation
         _padding = self._tokenizer.padding
         # Set truncation and padding on the backend tokenizer
@@ -628,6 +638,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         verbose: bool = True,
         split_special_tokens: bool = False,
     ) -> BatchEncoding:
+        print("进行细节操作")
         if not isinstance(batch_text_or_text_pairs, (tuple, list)):
             raise TypeError(
                 f"batch_text_or_text_pairs has to be a list or a tuple (got {type(batch_text_or_text_pairs)})"
@@ -696,7 +707,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             self._eventual_warn_about_too_long_sequence(input_ids, max_length, verbose)
         return BatchEncoding(sanitized_tokens, sanitized_encodings, tensor_type=return_tensors)
 
-    def _encode_plus(
+    def _encode_plus1(
         self,
         text: Union[TextInput, PreTokenizedInput],
         text_pair: Optional[Union[TextInput, PreTokenizedInput]] = None,
@@ -741,6 +752,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             split_special_tokens=split_special_tokens,
             **kwargs,
         )
+        print("加密中=========")
 
         # Return tensor is None, then we can remove the leading batch axis
         # Overflowing tokens are returned as a batch of output so we keep them in this case

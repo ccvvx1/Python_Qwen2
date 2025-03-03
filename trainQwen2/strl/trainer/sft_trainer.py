@@ -32,12 +32,13 @@ from transformers import (
     DataCollatorForLanguageModeling,
     FeatureExtractionMixin,
     PreTrainedModel,
-    PreTrainedTokenizerBase,
+    # PreTrainedTokenizerBase,
     ProcessorMixin,
     # Trainer,
     TrainingArguments,
     is_wandb_available,
 )
+from tokenization_utils_base import PreTrainedTokenizerBase
 from trainer import Trainer
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import EvalPrediction
@@ -544,11 +545,12 @@ class SFTTrainer(Trainer):
                 map_kwargs["desc"] = f"Tokenizing {dataset_name} dataset"
             
             def tokenize(example, processing_class, dataset_text_field):
-                print(f"正在处理样本ID：{example.get('id', 'N/A')}") if bPrintMoreKv else None
-                result = processing_class(example[dataset_text_field])
+                print(f"正在处理样本ID：{example.get('id', 'N/A')}", " 分词处理的字段名称：", dataset_text_field) if bPrintMoreKv else None
+                # print("使用的函数：", processing_class) example[dataset_text_field]
+                result = processing_class()
                 if bPrintMoreKv:
                     print(f"分词结果长度：{len(result['input_ids'])}")
-                    print(f"示例输入IDs：{result['input_ids'][:5]}...")
+                    print(f"示例输入IDs：{result['input_ids'][:10]}...")
                 return result
                 
             dataset = dataset.map(
