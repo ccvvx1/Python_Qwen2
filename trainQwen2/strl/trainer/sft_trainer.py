@@ -159,86 +159,137 @@ class SFTTrainer(Trainer):
         peft_config: Optional["PeftConfig"] = None,
         formatting_func: Optional[Union[Callable[[dict], str], Callable[[dict], list[str]]]] = None,
     ):
-        # Args
+        print("\n" + "="*40)
+        print("Initializing SFT Trainer".center(40))
+        print("="*40)
+        
+        # Args initialization
+        print("\n[Phase 1] 参数初始化".ljust(40, '-'))
         if args is None:
             model_name = model if isinstance(model, str) else model.config._name_or_path
-            model_name = model_name.split("/")[-1]
-            args = SFTConfig(f"{model_name}-SFT")
+            short_name = model_name.split("/")[-1]
+            args = SFTConfig(f"{short_name}-SFT")
+            print(f"自动生成SFT配置 | 模型简称: {short_name} | 配置名称: {args.output_dir}")
         elif isinstance(args, TrainingArguments) and not isinstance(args, SFTConfig):
             dict_args = args.to_dict()
             dict_args["hub_token"] = args.hub_token  # to_dict hides the hub_token
             dict_args.pop("push_to_hub_token")
             args = SFTConfig(**dict_args)
+            print(f"转换TrainingArguments到SFTConfig | 原始参数数量: {len(dict_args)} | 转换后参数示例: {list(dict_args.keys())[:3]}...")
         
-        # print("训练用的参数：", args)
-
-        # Model
+        # Model initialization
+        print("\n[Phase 2] 模型初始化".ljust(40, '-'))
         if args.model_init_kwargs is not None and not isinstance(model, str):
-            warnings.warn(
-                "You passed model_init_kwargs to the `SFTConfig`, but your model is already instantiated. "
-                "The `model_init_kwargs` will be ignored."
-            )
+            warnings.warn("model_init_kwargs将被忽略（模型已实例化）")
+            print(f"⚠️ 警告 | 忽略model_init_kwargs参数: {list(args.model_init_kwargs.keys())}")
+            
         if isinstance(model, str):
-            print("模型名称：", model)
+            print(f"从路径加载模型 | 模型标识: {model}")
             model = self._create_model_from_path(model, args)
-
-        # PEFT configuration and model wrapping
+            print(f"✅ 模型加载完成 | 类型: {type(model).__name__} | 参数量: {sum(p.numel() for p in model.parameters()):,}")
+        else:
+            print(f"使用已有模型实例 | 类型: {type(model).__name__} | 是否冻结参数: {all(not p.requires_grad for p in model.parameters())}")
+        
+        # PEFT configuration
         if peft_config is not None:
-            print("lora微调模型参数：", model)
-            print("lora微调模型配置：", peft_config)
+            print("\n[Phase 3] PEFT配置".ljust(40, '-'))
+            print(f"应用PEFT配置前模型结构: {model}")
+            print(f"PEFT配置详情: {peft_config.to_dict()}")
             model = self._prepare_peft_model(model, peft_config, args)
-
-        # Handle the tokenizer
+            # print(f"✅ PEFT应用完成 | 新模型结构: {type(model).__name__} | 可训练参数占比: {self._get_trainable_parameter_ratio(model):.1%}")
+        
+        # Tokenizer handling
+        print("\n[Phase 4] 分词器处理".ljust(40, '-'))
         if processing_class is None:
-            processing_class = AutoTokenizer.from_pretrained(model.config._name_or_path)
+            model_path = model.config._name_or_path if hasattr(model, 'config') else 'Unknown'
+            print(f"自动加载分词器 | 模型路径: {model_path}")
+            processing_class = AutoTokenizer.from_pretrained(model_path)
             if processing_class.pad_token is None:
-                processing_class.pad_token = processing_class.eos_token  # required for padding when collating data
-
-        # Dataset
+                processing_class.pad_token = processing_class.eos_token
+                print(f"⚠️ 设置pad_token为eos_token | pad_token_id: {processing_class.pad_token_id}")
+            print(f"分词器类型: {type(processing_class).__name__} | 词汇量: {processing_class.vocab_size:,}")
+        else:
+            print(f"使用自定义处理器 | 类型: {type(processing_class).__name__}")
+        
+        # Dataset preparation
+        print("\n[Phase 5] 数据集准备".ljust(40, '-'))
         preprocess_dataset = args.dataset_kwargs is None or not args.dataset_kwargs.get("skip_prepare_dataset", False)
-        # print("准备数据的函数类型：", self._prepare_dataset)
+
+        # 数据集预处理逻辑
+        print("\n[Phase 6] 数据集预处理".ljust(40, '-'))
         if preprocess_dataset:
+            print(f"开始训练集预处理 | 原始数据集类型: {type(train_dataset).__name__}")
+            original_train_size = len(train_dataset) if hasattr(train_dataset, '__len__') else 'Unknown'
+            
             train_dataset = self._prepare_dataset(
                 train_dataset, processing_class, args, args.packing, formatting_func, "train"
             )
+            
+            new_train_size = len(train_dataset) if hasattr(train_dataset, '__len__') else 'Unknown'
+            print(f"✅ 训练集预处理完成 | 处理前样本数: {original_train_size} -> 处理后: {new_train_size}")
+            
             if eval_dataset is not None:
                 packing = args.packing if args.eval_packing is None else args.eval_packing
+                print(f"\n评估集打包策略: {'启用' if packing else '禁用'}")
+                
                 if isinstance(eval_dataset, dict):
-                    eval_dataset = {
-                        key: self._prepare_dataset(dataset, processing_class, args, packing, formatting_func, key)
-                        for key, dataset in eval_dataset.items()
-                    }
+                    print(f"处理字典格式评估集 | 包含{len(eval_dataset)}个子集: {list(eval_dataset.keys())}")
+                    for key in eval_dataset:
+                        original_eval_size = len(eval_dataset[key]) if hasattr(eval_dataset[key], '__len__') else 'Unknown'
+                        eval_dataset[key] = self._prepare_dataset(
+                            eval_dataset[key], processing_class, args, packing, formatting_func, key
+                        )
+                        new_eval_size = len(eval_dataset[key]) if hasattr(eval_dataset[key], '__len__') else 'Unknown'
+                        print(f"  {key}子集处理完成 | {original_eval_size} -> {new_eval_size}")
                 else:
+                    original_eval_size = len(eval_dataset) if hasattr(eval_dataset, '__len__') else 'Unknown'
                     eval_dataset = self._prepare_dataset(
                         eval_dataset, processing_class, args, packing, formatting_func, "eval"
                     )
+                    new_eval_size = len(eval_dataset) if hasattr(eval_dataset, '__len__') else 'Unknown'
+                    print(f"评估集处理完成 | {original_eval_size} -> {new_eval_size}")
+        else:
+            print("⚠️ 跳过数据集预处理步骤")
 
-        # print("数据集合============================!!! ", data_collator)
-        # Data collator
+        # 数据整理器初始化
+        print("\n[Phase 7] 数据整理器配置".ljust(40, '-'))
         if data_collator is None:
-            print("数据集合============================")
-            data_collator = DataCollatorForLanguageModeling(tokenizer=processing_class, mlm=False)
+            print("自动创建默认数据整理器")
+            print(f"分词器类型: {type(processing_class).__name__} | MLM: {'否'}")
+            data_collator = DataCollatorForLanguageModeling(
+                tokenizer=processing_class, 
+                mlm=False
+            )
+            print(f"✅ 数据整理器创建完成 | 类型: {type(data_collator).__name__}")
+        else:
+            print(f"使用自定义数据整理器 | 类型: {type(data_collator).__name__}")
 
-        # Initialize the metrics
-        self._metrics = defaultdict(list)
-
-        # Initialize the Trainer. Parent class will handle:
-        # - DeepSpeed configuration (through create_accelerator_and_postprocess)
-        # - FSDP setup
-        # - Distributed training setup
-        # - Optimizer and scheduler creation
-        # Some arguments are only available for transformers>=4.47.0. Can be removed when the min version is bumped.
+        # 父类初始化兼容性处理
+        print("\n[Phase 8] 父类初始化准备".ljust(40, '-'))
         super_init_kwargs = {}
-        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+        transformers_version = version.parse(transformers.__version__)
+        required_version = version.parse("4.47.0.dev0")
+        
+        print(f"检测Transformers版本: {transformers_version}")
+        if transformers_version >= required_version:
+            print(f"版本兼容 (≥{required_version}) | 注入优化器配置")
             super_init_kwargs["optimizer_cls_and_kwargs"] = optimizer_cls_and_kwargs
+            if optimizer_cls_and_kwargs:
+                opt_cls, opt_kwargs = optimizer_cls_and_kwargs
+                print(f"自定义优化器配置: {opt_cls.__name__} | 参数示例: {list(opt_kwargs.keys())[:2]}")
         else:
             if optimizer_cls_and_kwargs is not None:
-                warnings.warn(
-                    "The `optimizer_cls_and_kwargs` argument is only available for `transformers>=4.47.0`. "
-                    "The default optimizer will be used. "
-                    "Remove the `optimizer_cls_and_kwargs` or upgrade to `transformers>=4.47.0`."
-                )
-        print("调用父类加载")
+                warnings.warn("旧版本Transformers不支持optimizer_cls_and_kwargs")
+                print(f"⚠️ 版本过低 ({transformers_version} < {required_version}) | 已忽略优化器配置")
+
+        # 调用父类初始化
+        print("\n[Phase 9] 执行父类初始化".ljust(40, '-'))
+        print("传递关键参数列表:")
+        print(f"  - 模型类型: {type(model).__name__}")
+        print(f"  - 训练集样本数: {len(train_dataset) if train_dataset else 'None'}")
+        print(f"  - 回调函数数量: {len(callbacks) if callbacks else 0}")
+        
+        print("调用super().__init__...")
         super().__init__(
             model=model,
             args=args,
@@ -253,11 +304,20 @@ class SFTTrainer(Trainer):
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
             **super_init_kwargs,
         )
+        print("✅ 父类初始化完成")
 
-        print("模型标贴名称：", self._tag_names)
-        # Add tags for models that have been loaded with the correct transformers version
+        # 模型标签处理
+        print("\n[Phase 10] 模型元数据配置".ljust(40, '-'))
+        print(f"当前模型标签: {getattr(self, '_tag_names', '未定义')}")
         if hasattr(self.model, "add_model_tags"):
+            print("检测到模型标签接口，添加训练方法标签")
+            # self.model.add_model_tag("sft")
+            # self.model.add_model_tag("transformers_trainer")
             self.model.add_model_tags(self._tag_names)
+            print(f"更新后标签: {self.model.__class__.__name__} 的标签列表")
+        else:
+            print("⚠️ 模型不支持标签添加功能")
+
 
     def _create_model_from_path(self, model_path: str, args: SFTConfig) -> PreTrainedModel:
         """Creates a model from a path or model identifier."""

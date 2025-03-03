@@ -6,7 +6,7 @@ dataset = load_dataset("Magpie-Align/Magpie-Reasoning-V2-250K-CoT-Deepseek-R1-Ll
 # dataset = load_dataset("Congliu/Chinese-DeepSeek-R1-Distill-data-110k")
 dataset = dataset["train"]
 
-sub_dataset = dataset.select(range(200))  # 假设需要处理train分片
+sub_dataset = dataset.select(range(5))  # 假设需要处理train分片
 
 # Format the dataset
 def format_instruction(example):
@@ -26,6 +26,39 @@ formatted_dataset = sub_dataset.map(format_instruction, batched=False, remove_co
 formatted_dataset = formatted_dataset.train_test_split(test_size=0.1)  # 90-10 train-test split
 
 print(formatted_dataset["test"])
+
+
+
+# from datasets import Dataset
+import pandas as pd
+
+# # 假设您的数据集结构如下
+# data = {
+#     'instruction': ['给出以下文本的情感分析'],
+#     'response': ['这段文本表达了积极的情感'],
+#     'text': ['我非常喜欢这个产品的设计！']
+# }
+# dataset = Dataset.from_dict(data)
+
+# 方法一：转换为Pandas DataFrame打印（推荐）
+# print("\n方法一：转换为DataFrame显示")
+# df = pd.DataFrame(formatted_dataset["test"])
+# print(df.to_string(index=False))  # 禁用行索引
+
+# 方法二：逐行格式化打印
+print("\n方法二：结构化遍历输出")
+for i in range(len(formatted_dataset["test"])):
+    print(f"\nRow {i+1}")
+    for feature in formatted_dataset["test"].features:
+        value = formatted_dataset["test"][i][feature]
+        # 处理长文本的显示
+        display_value = str(value)[:50] + "..." if len(str(value)) > 50 else value
+        print(f"  {feature.upper():<12} ▶  {display_value}")
+
+# # 方法三：原始结构打印（适合调试）
+# print("\n方法三：原始数据结构")
+# print(dataset)
+
 
 
 
