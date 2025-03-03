@@ -68,38 +68,50 @@ def apply_chat_template(
     tools: Optional[list[Union[dict, Callable]]] = None,
 ) -> dict[str, str]:
     r"""
-    Apply a chat template to a conversational example along with the schema for a list of functions in `tools`.
-
-    For more details, see [`maybe_apply_chat_template`].
+    添加了详细处理过程追踪的模板应用函数
     """
-    # Check that the example has the correct keys
+    print("\n=== 开始应用聊天模板 ===")
+    print(f"输入数据键: {example.keys()}")
+    print(f"工具参数类型: {type(tools) if tools else '无工具参数'}")
+
+    # 验证输入键有效性
     supported_keys = ["prompt", "chosen", "rejected", "completion", "messages", "label"]
     example_keys = {key for key in example.keys() if key in supported_keys}
-    if example_keys not in [
-        {"messages"},  # language modeling
-        {"prompt"},  # prompt-only
-        {"prompt", "completion"},  # prompt-completion
-        {"prompt", "chosen", "rejected"},  # preference
-        {"chosen", "rejected"},  # preference with implicit prompt
-        {"prompt", "completion", "label"},  # unpaired preference
-    ]:
+    valid_key_combinations = [
+        {"messages"}, {"prompt"}, {"prompt", "completion"}, 
+        {"prompt", "chosen", "rejected"}, {"chosen", "rejected"},
+        {"prompt", "completion", "label"}
+    ]
+    
+    print(f"\n[键验证] 检测到有效键组合: {example_keys}")
+    if example_keys not in valid_key_combinations:
+        print(f"❌ 无效键组合! 允许的组合: {valid_key_combinations}")
         raise KeyError(f"Invalid keys in the example: {example_keys}")
+    else:
+        print("✅ 键组合验证通过")
 
-    # Apply the chat template to the whole conversation
+    result = {}
+    
+    # 处理messages类型
     if "messages" in example:
+        print("\n[消息处理] 检测到messages键")
+        print(f"消息数量: {len(example['messages'])}")
+        print("首条消息结构:", example["messages"][0] if example["messages"] else "空")
+        
         messages = tokenizer.apply_chat_template(example["messages"], tools=tools, tokenize=False)
+        result["text"] = messages
+        print(f"模板应用结果预览: {messages[:100]}...")
 
-    # Apply the chat template to the prompt, adding the generation prompt
+    # 处理prompt类型
     if "prompt" in example:
+        print("\n[提示处理] 检测到prompt键")
         last_role = example["prompt"][-1]["role"]
-        if last_role == "user":
-            add_generation_prompt = True
-            continue_final_message = False
-        elif last_role == "assistant":
-            add_generation_prompt = False
-            continue_final_message = True
-        else:
-            raise ValueError(f"Invalid role in the last message: {last_role}")
+        print(f"最后消息角色: {last_role}")
+        
+        add_generation_prompt = last_role == "user"
+        continue_final_message = last_role == "assistant"
+        print(f"生成提示标记: {add_generation_prompt} | 继续标记: {continue_final_message}")
+        
         prompt = tokenizer.apply_chat_template(
             example["prompt"],
             tools=tools,
@@ -107,60 +119,102 @@ def apply_chat_template(
             tokenize=False,
             add_generation_prompt=add_generation_prompt,
         )
+        result["prompt"] = prompt
+        print(f"提示模板预览: {prompt[:100]}...")
+# def ok():
+    print("\n=== 开始处理数据样本 ===")
+    print(f"输入数据包含的键: {example.keys()}")
+    
+    # 显式prompt处理分支
+    if "prompt" in example:
+        print("\n[显式Prompt处理]")
+        print(f"原始prompt消息数: {len(example['prompt'])}")
+        print(f"原始prompt最后一条消息: {example['prompt'][-1]}")
 
-    # Apply the chat template to the entire prompt + completion
-    if "prompt" in example:  # explicit prompt and prompt-completion case
+        # 处理chosen分支
         if "chosen" in example:
-            prompt_chosen = tokenizer.apply_chat_template(
-                example["prompt"] + example["chosen"], tools=tools, tokenize=False
-            )
-            chosen = prompt_chosen[len(prompt) :]
-        if "rejected" in example and "prompt" in example:  # explicit prompt
-            prompt_rejected = tokenizer.apply_chat_template(
-                example["prompt"] + example["rejected"], tools=tools, tokenize=False
-            )
-            rejected = prompt_rejected[len(prompt) :]
-        if "completion" in example:
-            prompt_completion = tokenizer.apply_chat_template(
-                example["prompt"] + example["completion"], tools=tools, tokenize=False
-            )
-            completion = prompt_completion[len(prompt) :]
-    else:  # implicit prompt case
-        if "chosen" in example:
-            chosen = tokenizer.apply_chat_template(example["chosen"], tools=tools, tokenize=False)
+            print(f"\n处理chosen分支，消息数: {len(example['chosen'])}")
+            combined_chosen = example["prompt"] + example["chosen"]
+            print(f"拼接后总消息数: {len(combined_chosen)}")
+            prompt_chosen = tokenizer.apply_chat_template(combined_chosen, tools=tools, tokenize=False)
+            print(f"完整chosen文本长度: {len(prompt_chosen)}")
+            chosen = prompt_chosen[len(prompt):]
+            print(f"截取后chosen长度: {len(chosen)} | 截取部分示例: {chosen[:50]}...")
+
+        # 处理rejected分支
         if "rejected" in example:
+            print(f"\n处理rejected分支，消息数: {len(example['rejected'])}")
+            combined_rejected = example["prompt"] + example["rejected"]
+            prompt_rejected = tokenizer.apply_chat_template(combined_rejected, tools=tools, tokenize=False)
+            print(f"完整rejected文本长度: {len(prompt_rejected)}")
+            rejected = prompt_rejected[len(prompt):]
+            print(f"截取后rejected长度: {len(rejected)} | 截取部分示例: {rejected[:50]}...")
+
+        # 处理completion分支
+        if "completion" in example:
+            print(f"\n处理completion分支，消息数: {len(example['completion'])}")
+            combined_completion = example["prompt"] + example["completion"]
+            prompt_completion = tokenizer.apply_chat_template(combined_completion, tools=tools, tokenize=False)
+            print(f"完整completion文本长度: {len(prompt_completion)}")
+            completion = prompt_completion[len(prompt):]
+            print(f"截取后completion长度: {len(completion)} | 截取部分示例: {completion[:50]}...")
+
+    else:
+        print("\n[隐式Prompt处理]")
+        # 处理chosen/rejected分支
+        if "chosen" in example:
+            print(f"直接处理chosen消息数: {len(example['chosen'])}")
+            chosen = tokenizer.apply_chat_template(example["chosen"], tools=tools, tokenize=False)
+            print(f"chosen最终文本长度: {len(chosen)} | 示例: {chosen[:50]}...")
+
+        if "rejected" in example:
+            print(f"直接处理rejected消息数: {len(example['rejected'])}")
             rejected = tokenizer.apply_chat_template(example["rejected"], tools=tools, tokenize=False)
+            print(f"rejected最终文本长度: {len(rejected)} | 示例: {rejected[:50]}...")
 
-    # Ensure that the prompt is the initial part of the prompt-completion string
+    # 验证prompt一致性
     if "prompt" in example:
-        error_message = (
-            "The chat template applied to the prompt + completion does not start with the chat template applied to "
-            "the prompt alone. This can indicate that the chat template is not supported by TRL."
-            "\n**Prompt**:\n{}\n\n**Prompt + Completion**:\n{}"
-        )
-        if "chosen" in example and not prompt_chosen.startswith(prompt):
-            raise ValueError(error_message.format(prompt, prompt_chosen))
-        if "rejected" in example and not prompt_rejected.startswith(prompt):
-            raise ValueError(error_message.format(prompt, prompt_rejected))
-        if "completion" in example and not prompt_completion.startswith(prompt):
-            raise ValueError(error_message.format(prompt, prompt_completion))
+        print("\n[一致性验证]")
+        error_template = "检测到潜在不一致:\nPrompt:\n%s\n\n组合文本:\n%s"
+        
+        def check_consistency(full_text, name):
+            if not full_text.startswith(prompt):
+                print("❌ 验证失败: %s文本不以prompt开头" % name)
+                print(error_template % (prompt[:100], full_text[:100]))
+                return False
+            print("✅ %s验证通过" % name)
+            return True
 
-    # Extract the completion by removing the prompt part from the prompt-completion string
+        if "chosen" in example:
+            check_consistency(prompt_chosen, "chosen")
+        if "rejected" in example:
+            check_consistency(prompt_rejected, "rejected")
+        if "completion" in example:
+            check_consistency(prompt_completion, "completion")
+
+    # 构建输出结果
+    print("\n[构建输出结果]")
     output = {}
-    if "messages" in example:
-        output["text"] = messages
-    if "prompt" in example:
-        output["prompt"] = prompt
-    if "chosen" in example:
-        output["chosen"] = chosen
-    if "rejected" in example:
-        output["rejected"] = rejected
-    if "completion" in example:
-        output["completion"] = completion
-    if "label" in example:
-        output["label"] = example["label"]
+    key_mapping = {
+        "messages": ("text", messages),
+        "prompt": ("prompt", prompt),
+        "chosen": ("chosen", chosen),
+        "rejected": ("rejected", rejected),
+        "completion": ("completion", completion),
+        "label": ("label", example.get("label"))
+    }
 
+    for key in example:
+        if key in key_mapping:
+            output_key, value = key_mapping[key]
+            output[output_key] = value
+            status = "存在" if value is not None else "缺失"
+            print(f"添加字段: {output_key.ljust(8)} | 状态: {status.ljust(4)} | 长度: {len(value) if isinstance(value, str) else 'N/A'}")
+
+    print("\n=== 最终输出 ===")
+    print({k: (f"{v[:50]}..." if isinstance(v, str) else v) for k, v in output.items()})
     return output
+
 
 
 def maybe_apply_chat_template(
@@ -469,47 +523,67 @@ def pack_examples(examples: dict[str, list[list]], seq_length: int) -> dict[str,
 def maybe_convert_to_chatml(example: dict[str, list]) -> dict[str, list]:
     """
     Convert a conversational dataset with fields `from` and `value` to ChatML format.
-
-    This function modifies conversational data to align with OpenAI's ChatML format:
-    - Replaces the key `"from"` with `"role"` in message dictionaries.
-    - Replaces the key `"value"` with `"content"` in message dictionaries.
-    - Renames `"conversations"` to `"messages"` for consistency with ChatML.
-
-    Args:
-        example (`dict[str, list]`):
-            A single data entry containing a list of messages.
-
-    Returns:
-        `dict[str, list]`:
-            Example reformatted to ChatML style.
-
-    Example:
-    ```python
-    >>> from trl import maybe_convert_to_chatml
-    >>> example = {
-    ...     "conversations": [
-    ...         {"from": "user", "value": "What color is the sky?"},
-    ...         {"from": "assistant", "value": "It is blue."}
-    ...     ]
-    ... }
-    >>> maybe_convert_to_chatml(example)
-    {'messages': [{'role': 'user', 'content': 'What color is the sky?'},
-                  {'role': 'assistant', 'content': 'It is blue.'}]}
-    ```
+    添加了详细的转换过程打印信息
     """
-    # List of possible keys containing message lists
+    print("\n=== 开始ChatML格式转换 ===")
+    original_keys = set(example.keys())
+    print(f"输入数据原始键: {original_keys}")
+
+    # 遍历所有可能的对话键
+    processed_keys = set()
     for key in ["prompt", "completion", "chosen", "rejected", "messages", "conversations"]:
         if key in example and isinstance(example[key], list):
+            print(f"\n检测到对话键 [{key}]，包含 {len(example[key])} 条消息")
             messages = example[key]
-            for message in messages:
-                if isinstance(message, dict):
-                    if "from" in message:
-                        message["role"] = message.pop("from")
-                    if "value" in message:
-                        message["content"] = message.pop("value")
+            modified_count = 0
+            
+            for i, message in enumerate(messages):
+                print(f"\n处理第 {i+1} 条消息:")
+                if not isinstance(message, dict):
+                    print(f"  警告：消息类型为 {type(message)}，跳过转换")
+                    continue
+                
+                change_flag = False
+                # 转换 from -> role
+                if "from" in message:
+                    original_role = message["from"]
+                    message["role"] = message.pop("from")
+                    print(f"  ✓ 转换字段: from -> role | 值: {original_role} -> {message['role']}")
+                    change_flag = True
+                else:
+                    print("  × 未找到 'from' 字段")
+                
+                # 转换 value -> content
+                if "value" in message:
+                    content_preview = str(message["value"])[:30] + ("..." if len(str(message["value"])) > 30 else "")
+                    message["content"] = message.pop("value")
+                    print(f"  ✓ 转换字段: value -> content | 内容预览: {content_preview}")
+                    change_flag = True
+                else:
+                    print("  × 未找到 'value' 字段")
+                
+                if change_flag:
+                    modified_count += 1
+                    print(f"  当前消息转换后: { {k: str(v)[:50] + ('...' if len(str(v)) > 50 else '') for k, v in message.items()} }")
+            
+            print(f"共处理 {len(messages)} 条消息，成功转换 {modified_count} 条")
+            processed_keys.add(key)
 
-    # Rename "conversations" to "messages"
+    # 重命名 conversations -> messages
     if "conversations" in example:
+        print(f"\n重命名键: conversations -> messages")
         example["messages"] = example.pop("conversations")
-
+        processed_keys.add("conversations")
+    
+    new_keys = set(example.keys())
+    added_keys = new_keys - original_keys
+    removed_keys = original_keys - new_keys
+    
+    print("\n=== 转换结果 ===")
+    print(f"新增键: {added_keys if added_keys else '无'}")
+    print(f"移除键: {removed_keys if removed_keys else '无'}")
+    print(f"最终数据键: {new_keys}")
+    print(f"处理过的原始键: {processed_keys if processed_keys else '无'}")
+    
     return example
+

@@ -494,7 +494,7 @@ class SFTTrainer(Trainer):
 
                 dataset = dataset.map(concat_prompt_completion, remove_columns=["prompt", "completion"])
                 print(f"✅ 合并完成，剩余列: {dataset.column_names}")
-    # def ok():
+
         global bPrintMoreKv  # 用于控制详细调试输出的全局变量
         
         # --- 转换到ChatML格式 ---
