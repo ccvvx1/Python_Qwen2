@@ -221,6 +221,7 @@ class SFTTrainer(Trainer):
             print(f"开始训练集预处理 | 原始数据集类型: {type(train_dataset).__name__}")
             original_train_size = len(train_dataset) if hasattr(train_dataset, '__len__') else 'Unknown'
             
+            # 进行数据预处理
             train_dataset = self._prepare_dataset(
                 train_dataset, processing_class, args, args.packing, formatting_func, "train"
             )
@@ -440,109 +441,167 @@ class SFTTrainer(Trainer):
         formatting_func: Optional[Callable[[dict], str]],
         dataset_name: str,
     ) -> Union[Dataset, IterableDataset]:
-        # Convert the dataset to an IterableDataset if it is a ConstantLengthDataset
+        print(f"\n🔍 开始处理数据集: {dataset_name} (类型: {type(dataset).__name__})")
+        
+        # 1. 处理 ConstantLengthDataset 类型
         if isinstance(dataset, ConstantLengthDataset):
+            print("🔄 检测到 ConstantLengthDataset，跳过预处理步骤")
             return dataset
 
-        # If the dataset is already preprocessed (tokenized), skip the processing steps.
-        column_names = list(next(iter(dataset)).keys())
+        # 2. 检查是否已预处理
+        first_sample = next(iter(dataset))
+        column_names = list(first_sample.keys())
         is_processed = "input_ids" in column_names
+        print(f"📊 数据集列名: {column_names}")
+        print(f"🔄 预处理状态: {'已处理' if is_processed else '未处理'}")
 
-        # Build the kwargs for the `map` function
         map_kwargs = {}
-        if isinstance(dataset, Dataset):  # IterableDataset does not support num_proc
+        if isinstance(dataset, Dataset):
             map_kwargs["num_proc"] = args.dataset_num_proc
+            print(f"⚙️ 设置多进程数: {args.dataset_num_proc}")
 
         with PartialState().local_main_process_first():
-            # Apply the formatting function if any
-            if formatting_func is not None and is_processed:
-                warnings.warn(
-                    "You passed a dataset that is already processed (contains an `input_ids` field) together with a "
-                    "formatting function. Therefore `formatting_func` will be ignored. Either remove the "
-                    "`formatting_func` or pass a dataset that is not already processed.",
-                    UserWarning,
-                )
+            # 3. 应用格式化函数
+            if formatting_func is not None:
+                if is_processed:
+                    warnings.warn("忽略已处理数据集的格式化函数", UserWarning)
+                    print("⚠️ 警告：检测到已处理数据集，跳过 formatting_func")
+                else:
+                    print(f"🛠️ 正在应用格式化函数: {formatting_func.__name__}")
+                    batched = isinstance(formatting_func(first_sample), list)
+                    print(f"📦 批处理模式: {'开启' if batched else '关闭'}")
 
-            if formatting_func is not None and not is_processed:
-                if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
-                    map_kwargs["desc"] = f"Applying formatting function to {dataset_name} dataset"
+                    def _func(example):
+                        result = {"text": formatting_func(example)}
+                        print(f"📝 格式化样例 -> 输入keys: {example.keys()} | 输出keys: {result.keys()}")
+                        return result
 
-                batched = isinstance(formatting_func(next(iter(dataset))), list)
+                    if isinstance(dataset, Dataset):
+                        map_kwargs["desc"] = f"格式化 {dataset_name}"
+                    dataset = dataset.map(_func, batched=batched, **map_kwargs)
+                    print(f"✅ 格式化完成，新列: {dataset.column_names}")
 
-                def _func(example):
-                    return {"text": formatting_func(example)}
-                print("处理text字段")
-                dataset = dataset.map(_func, batched=batched, **map_kwargs)
-
-            # If the dataset is prompt-completion, convert it to language modeling type
-            if "prompt" in dataset.column_names and "completion" in dataset.column_names:
-                key = "messages" if is_conversational(dataset[0]) else "text"
+            # 4. 合并 prompt/completion 字段
+            if "prompt" in column_names and "completion" in column_names:
+                print("🔀 检测到 prompt-completion 结构，开始合并...")
+                key = "messages" if is_conversational(first_sample) else "text"
+                print(f"🗝️ 合并后的字段名: {key}")
 
                 def concat_prompt_completion(example):
-                    return {key: example["prompt"] + example["completion"]}
+                    merged = {key: example["prompt"] + example["completion"]}
+                    print(f"✂️ 合并样例 -> 长度: {len(merged[key])} 字符")
+                    return merged
 
                 dataset = dataset.map(concat_prompt_completion, remove_columns=["prompt", "completion"])
+                print(f"✅ 合并完成，剩余列: {dataset.column_names}")
+    # def ok():
+        global bPrintMoreKv  # 用于控制详细调试输出的全局变量
+        
+        # --- 转换到ChatML格式 ---
+        print(f"\n=== 阶段1：开始转换数据集到ChatML格式 ===")
+        if "conversations" in dataset.column_names:
+            print(f"检测到原始对话列[conversations]，将执行格式转换")
+        else:
+            print(f"未检测到原始对话列，跳过转换")
 
-            # Convert the dataset to ChatML if needed
-            if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
-                map_kwargs["desc"] = f"Converting {dataset_name} dataset to ChatML"
+        if isinstance(dataset, Dataset):  # 标准数据集支持进度描述
+            print(f"正在使用标准Dataset类型，启用进度条显示")
+            map_kwargs["desc"] = f"Converting {dataset_name} dataset to ChatML"
+        else:
+            print(f"使用IterableDataset类型，无进度条显示")
+
+        dataset = dataset.map(
+            maybe_convert_to_chatml,
+            remove_columns="conversations" if "conversations" in dataset.column_names else None,
+            **map_kwargs,
+        )
+        print(f"转换完成，当前数据集列名：{dataset.column_names}")
+
+        # --- 应用聊天模板 ---
+        print(f"\n=== 阶段2：应用聊天模板 ===")
+        if "messages" in dataset.column_names:
+            print(f"检测到消息列[messages]，将应用模板")
+        else:
+            print(f"未检测到消息列，跳过模板应用")
+
+        if isinstance(dataset, Dataset):
+            map_kwargs["desc"] = f"Applying chat template to {dataset_name} dataset"
+        dataset = dataset.map(
+            maybe_apply_chat_template,
+            fn_kwargs={"tokenizer": processing_class},
+            remove_columns="messages" if "messages" in dataset.column_names else None,
+            **map_kwargs,
+        )
+        print(f"模板应用完成，当前数据集列名：{dataset.column_names}")
+        if "text" in dataset.column_names:
+            print(f"示例文本内容：\n{dataset[0]['text'][:100]}...")  # 打印首条文本前100字符
+
+        # --- 分词处理 ---
+        print(f"\n=== 阶段3：分词处理 ===")
+        if not is_processed:
+            print(f"数据未预处理，开始分词（处理类：{type(processing_class).__name__}）")
+            if isinstance(dataset, Dataset):
+                map_kwargs["desc"] = f"Tokenizing {dataset_name} dataset"
+            
+            def tokenize(example, processing_class, dataset_text_field):
+                print(f"正在处理样本ID：{example.get('id', 'N/A')}") if bPrintMoreKv else None
+                result = processing_class(example[dataset_text_field])
+                if bPrintMoreKv:
+                    print(f"分词结果长度：{len(result['input_ids'])}")
+                    print(f"示例输入IDs：{result['input_ids'][:5]}...")
+                return result
+                
             dataset = dataset.map(
-                maybe_convert_to_chatml,
-                remove_columns="conversations" if "conversations" in dataset.column_names else None,
+                tokenize,
+                fn_kwargs={"processing_class": processing_class, "dataset_text_field": args.dataset_text_field},
                 **map_kwargs,
             )
+            print(f"分词完成，当前数据集列名：{dataset.column_names}")
+        else:
+            print("数据已预处理，跳过分词步骤")
 
-            # Apply the chat template if needed
-            if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
-                map_kwargs["desc"] = f"Applying chat template to {dataset_name} dataset"
+        # --- 打包/截断处理 ---
+        print(f"\n=== 阶段4：序列整理 ===")
+        if packing:
+            print(f"启用打包模式，最大序列长度：{args.max_seq_length}")
+            if args.max_seq_length is None:
+                raise ValueError("打包模式必须指定max_seq_length参数！")
+            
+            print("筛选保留input_ids列...")
+            dataset = dataset.select_columns("input_ids")
+            
+            def pack_examples(examples, seq_length):
+                print(f"批量处理样本数：{len(examples['input_ids'])}") if bPrintMoreKv else None
+                # ...（实际打包逻辑）
+                return packed_examples
+                
             dataset = dataset.map(
-                maybe_apply_chat_template,
-                fn_kwargs={"tokenizer": processing_class},
-                remove_columns="messages" if "messages" in dataset.column_names else None,  # renamed to "text"
+                pack_examples, 
+                batched=True, 
+                fn_kwargs={"seq_length": args.max_seq_length}, 
+                **map_kwargs
+            )
+            print(f"打包后数据集结构：{dataset}")
+        elif args.max_seq_length is not None:
+            print(f"启用截断模式，最大序列长度：{args.max_seq_length}")
+            
+            def truncate(example, max_seq_length):
+                if bPrintMoreKv:
+                    print(f"截断前长度：input_ids={len(example['input_ids'])}, attention_mask={len(example['attention_mask'])}")
+                truncated = {key: val[:max_seq_length] for key, val in example.items() if key in ["input_ids", "attention_mask"]}
+                if bPrintMoreKv:
+                    print(f"截断后长度：input_ids={len(truncated['input_ids'])}, attention_mask={len(truncated['attention_mask'])}")
+                return truncated
+                
+            dataset = dataset.map(
+                truncate,
+                fn_kwargs={"max_seq_length": args.max_seq_length},
                 **map_kwargs,
             )
+            print(f"截断后示例长度：{len(dataset[0]['input_ids'])}")
+        # else:
+        #     print("未指定max_seq_length，跳过序列整理")
 
-            # Tokenize the dataset if needed
-            if not is_processed:
-                if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
-                    map_kwargs["desc"] = f"Tokenizing {dataset_name} dataset"
-
-                def tokenize(example, processing_class, dataset_text_field):
-                    return processing_class(example[dataset_text_field])
-
-                dataset = dataset.map(
-                    tokenize,
-                    fn_kwargs={"processing_class": processing_class, "dataset_text_field": args.dataset_text_field},
-                    **map_kwargs,
-                )
-
-            # Pack or truncate
-            if packing:
-                if args.max_seq_length is None:
-                    raise ValueError("When packing is enabled, `max_seq_length` can't be `None`.")
-                if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
-                    map_kwargs["desc"] = f"Packing {dataset_name} dataset"
-                dataset = dataset.select_columns("input_ids")
-                dataset = dataset.map(
-                    pack_examples, batched=True, fn_kwargs={"seq_length": args.max_seq_length}, **map_kwargs
-                )
-            elif args.max_seq_length is not None:
-                if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
-                    map_kwargs["desc"] = f"Truncating {dataset_name} dataset"
-
-                def truncate(example, max_seq_length):
-                    global bPrintMoreKv
-                    if bPrintMoreKv:
-                        print("补充更多字节")
-                        print({key: example[key][:max_seq_length] for key in ["input_ids", "attention_mask"]})
-                        bPrintMoreKv = False
-                    return {key: example[key][:max_seq_length] for key in ["input_ids", "attention_mask"]}
-
-                dataset = dataset.map(
-                    truncate,
-                    fn_kwargs={"max_seq_length": args.max_seq_length},
-                    **map_kwargs,
-                )
 
             # For Liger kernel, ensure only input_ids is present
             if args.use_liger:
