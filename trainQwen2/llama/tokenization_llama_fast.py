@@ -18,7 +18,9 @@ from typing import Optional, Tuple
 
 from tokenizers import processors
 
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
+from tokenization_utils_fast import PreTrainedTokenizerFast
+# from tokenization_llama_fast import PreTrainedTokenizerFast
+# from tokenization_llama_fast import PreTrainedTokenizerFast
 from transformers.utils import is_sentencepiece_available, logging
 from transformers.utils.versions import require_version
 
@@ -139,6 +141,7 @@ class LlamaTokenizerFast(PreTrainedTokenizerFast):
         add_prefix_space=None,
         **kwargs,
     ):
+        print("开始处理token")
         if legacy is None:
             logger.warning_once(
                 f"You are using the default legacy behaviour of the {self.__class__}. This is"
