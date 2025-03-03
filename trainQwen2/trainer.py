@@ -595,7 +595,9 @@ class Trainer:
             and isinstance(processing_class, (PreTrainedTokenizerBase, SequenceFeatureExtractor))
             else default_data_collator
         )
+        print("赋值数据加载器")
         self.data_collator = data_collator if data_collator is not None else default_collator
+        # print("赋值数据加载器的内容：", self.data_collator)
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.processing_class = processing_class
@@ -908,6 +910,7 @@ class Trainer:
 
     def _remove_unused_columns(self, dataset: "datasets.Dataset", description: Optional[str] = None):
         if not self.args.remove_unused_columns:
+            print("不删除部分列")
             return dataset
         self._set_signature_columns_if_needed()
         signature_columns = self._signature_columns
@@ -946,6 +949,7 @@ class Trainer:
             return data_collator
         self._set_signature_columns_if_needed()
         signature_columns = self._signature_columns
+        print("删除部分列")
 
         remove_columns_collator = RemoveColumnsCollator(
             data_collator=data_collator,
@@ -997,6 +1001,7 @@ class Trainer:
 
         train_dataset = self.train_dataset
         data_collator = self.data_collator
+        print("数据加载器内容：", data_collator)
         if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
             print("处理训练数据")
             train_dataset = self._remove_unused_columns(train_dataset, description="training")

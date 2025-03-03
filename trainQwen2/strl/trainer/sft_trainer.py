@@ -213,9 +213,10 @@ class SFTTrainer(Trainer):
                         eval_dataset, processing_class, args, packing, formatting_func, "eval"
                     )
 
+        # print("数据集合============================!!! ", data_collator)
         # Data collator
         if data_collator is None:
-            print("数据集合")
+            print("数据集合============================")
             data_collator = DataCollatorForLanguageModeling(tokenizer=processing_class, mlm=False)
 
         # Initialize the metrics
@@ -237,6 +238,7 @@ class SFTTrainer(Trainer):
                     "The default optimizer will be used. "
                     "Remove the `optimizer_cls_and_kwargs` or upgrade to `transformers>=4.47.0`."
                 )
+        print("调用父类加载")
         super().__init__(
             model=model,
             args=args,

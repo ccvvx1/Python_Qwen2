@@ -101,6 +101,7 @@ training_args = TrainingArguments(
 from strl import SFTTrainer
 from transformers import DataCollatorForLanguageModeling
 
+print("自定义加载数据：")
 # Data collator
 data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
