@@ -24,3 +24,7 @@ apt install libxcb-xinerama0 libxcb-randr0 libxcb-xinput0  # 安装其他常见x
 apt install libxkbcommon-x11-0  # 输入支持库
 apt install xdotool
 
+# # 强制终止所有 git 相关进程（卡住时使用）
+# pkill -f 'git (merge|rebase|pull|push|commit)' && sleep 1
+
+
