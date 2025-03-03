@@ -824,14 +824,48 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
         # If special token mask has been preprocessed, pop it from the dict.
         special_tokens_mask = batch.pop("special_tokens_mask", None)
         if self.mlm:
+            print("进行数据遮罩操作")
             batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
                 batch["input_ids"], special_tokens_mask=special_tokens_mask
             )
         else:
+            print("不进行数据遮罩操作")
+            # 克隆输入序列的Token ID作为标签基值
             labels = batch["input_ids"].clone()
+
+            # 原始数据：
+            # {
+            #     "input_ids": tensor([
+            #         [101, 2054, 2003, 1037, 102, 0, 0],   # 序列1
+            #         [101, 1996, 4248, 102, 0, 0, 0]        # 序列2
+            #     ]),
+            #     "attention_mask": tensor([
+            #         [1, 1, 1, 1, 1, 0, 0],
+            #         [1, 1, 1, 1, 0, 0, 0]
+            #     ])
+            # }
+            # 
+            # 处理过的数据：
+            # {
+            #     "input_ids": ...,  # 保持不变
+            #     "labels": tensor([
+            #         [2054, 2003, 1037, 102, -100, -100, -100],
+            #         [1996, 4248, 102, -100, -100, -100, -100]
+            #     ])
+            # }
+
+
+            # 检查分词器是否定义了填充符
             if self.tokenizer.pad_token_id is not None:
+                print("进行数据填充")
+                # 将填充符位置的标签标记为-100（损失函数忽略位）
                 labels[labels == self.tokenizer.pad_token_id] = -100
+
+            print("对应的标签内容：", labels)
+            print("对应的标签内容形状：", labels.shape)
+            # 将处理后的标签回写至数据批次
             batch["labels"] = labels
+
         return batch
 
     def torch_mask_tokens(self, inputs: Any, special_tokens_mask: Optional[Any] = None) -> Tuple[Any, Any]:

@@ -38,7 +38,12 @@ import torch
 model_id = "../../Python_Qwen2"
 # model_id = "microsoft/phi-3-mini-4k-instruct"
 print("通过配置构建标签生成需要的函数：")
-tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+# tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+# print("token类型：", tokenizer)
+
+from llama.tokenization_llama_fast import LlamaTokenizerFast
+
+tokenizer = LlamaTokenizerFast.from_pretrained(model_id, trust_remote_code=True)
 
 # Add custom tokens
 # CUSTOM_TOKENS = ["", ""]
