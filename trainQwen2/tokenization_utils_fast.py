@@ -111,14 +111,19 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             )
 
         if tokenizer_object is not None:
+            print("深度复制")
             fast_tokenizer = copy.deepcopy(tokenizer_object)
         elif fast_tokenizer_file is not None and not from_slow:
+            print("从文件加载，对应文件名称：", fast_tokenizer_file)
             # We have a serialization from tokenizers which let us directly build the backend
             fast_tokenizer = TokenizerFast.from_file(fast_tokenizer_file)
+            print("初步的标贴内容：", fast_tokenizer)
         elif slow_tokenizer:
+            print("转换为慢token")
             # We need to convert a slow tokenizer to build the backend
             fast_tokenizer = convert_slow_tokenizer(slow_tokenizer)
         elif gguf_file is not None:
+            print("转换框架")
             # We need to convert a slow tokenizer to build the backend
             gguf_param = load_gguf_checkpoint(kwargs.get("vocab_file"))
             architecture = gguf_param["config"]["model_type"]
@@ -129,10 +134,12 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             if len(additional_kwargs) > 0:
                 kwargs.update(additional_kwargs)
         elif self.slow_tokenizer_class is not None and slow_tokenizer is not False:
+            print("多次转换")
             # We need to create and convert a slow tokenizer to build the backend
             slow_tokenizer = self.slow_tokenizer_class(*args, **kwargs)
             fast_tokenizer = convert_slow_tokenizer(slow_tokenizer)
         elif not slow_tokenizer:
+            print("特殊转换")
             # We tried loading a slow_tokenizer with spm and failed, try to load with tiktoken
             self.vocab_file = kwargs.get("vocab_file", None)
             self.additional_special_tokens = kwargs.get("additional_special_tokens", [])
@@ -157,6 +164,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         _truncation = self._tokenizer.truncation
 
         if _truncation is not None:
+            print("补充参数")
             self._tokenizer.enable_truncation(**_truncation)
             kwargs.setdefault("max_length", _truncation["max_length"])
             kwargs.setdefault("truncation_side", _truncation["direction"])
@@ -167,6 +175,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
 
         _padding = self._tokenizer.padding
         if _padding is not None:
+            print("添加填充")
             self._tokenizer.enable_padding(**_padding)
             kwargs.setdefault("pad_token", _padding["pad_token"])
             kwargs.setdefault("pad_token_type_id", _padding["pad_type_id"])
@@ -179,6 +188,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         self._tokenizer.encode_special_tokens = self.split_special_tokens
 
         added_tokens_decoder_hash = {hash(repr(token)) for token in self.added_tokens_decoder}
+        print("新增一些token")
         tokens_to_add = [
             token
             for index, token in sorted(added_tokens_decoder.items(), key=lambda x: x[0])
@@ -190,8 +200,12 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             token for token in self.all_special_tokens_extended if token not in encoder and token not in tokens_to_add
         ]
 
+
         if len(tokens_to_add) > 0:
+            print("新增一些额外的标贴，对应内容：", tokens_to_add)
             tokens = []
+            # 一些自身的特殊标贴： ['<｜begin▁of▁sentence｜>', '<｜end▁of▁sentence｜>']
+            print("一些自身的特殊标贴：", self.all_special_tokens)
             special_tokens = self.all_special_tokens
             for token in tokens_to_add:
                 is_special = (
@@ -208,8 +222,11 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
                 self.add_tokens(tokens)
 
         try:
+            print("从json文件加载, 一个特殊的自身前缀：", self.add_prefix_space)
             pre_tok_state = json.loads(self.backend_tokenizer.pre_tokenizer.__getstate__())
+            print("特殊前缀：", pre_tok_state.get("add_prefix_space", self.add_prefix_space))
             if pre_tok_state.get("add_prefix_space", self.add_prefix_space) != self.add_prefix_space:
+                print("修改特殊前缀")
                 pre_tok_class = getattr(pre_tokenizers_fast, pre_tok_state.pop("type"))
                 pre_tok_state["add_prefix_space"] = self.add_prefix_space
                 self.backend_tokenizer.pre_tokenizer = pre_tok_class(**pre_tok_state)
