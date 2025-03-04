@@ -4195,56 +4195,92 @@ class Trainer:
         Return:
             `torch.Tensor`: The tensor with training loss on this batch.
         """
+    # def ok99():
+        """执行训练步骤的前向传播、损失计算和反向传播，包含详细硬件级调试信息"""
+        print("\n" + "="*60)
+        print("=== 开始训练步骤  ===")
+        
+        # 训练模式设置
         model.train()
+        print(f"[模式设置] 模型进入训练模式: {model.training}")
+        
+        # 优化器状态检查
         if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
+            print(f"[优化器状态] 检测到 {type(self.optimizer).__name__} 的train方法，执行预热")
             self.optimizer.train()
-
+        
+        # 输入数据准备
         inputs = self._prepare_inputs(inputs)
+        print("\n[输入准备] 数据预处理完成")
+        print(f"输入设备分布:")
+        for k, v in inputs.items():
+            print(f"  {k.ljust(15)}: {str(v.device).ljust(10)} shape={v.shape}")
+        
+        # SageMaker 分布式处理
         if is_sagemaker_mp_enabled():
+            print("\n[SageMaker MP] 启用模型并行处理")
+            print(f"梯度累积步数: {self.args.gradient_accumulation_steps}")
             loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
-            return loss_mb.reduce_mean().detach().to(self.args.device)
-
+            reduced_loss = loss_mb.reduce_mean().detach().to(self.args.device)
+            print(f"聚合损失值: {reduced_loss.item():.4f} (设备: {reduced_loss.device})")
+            return reduced_loss
+        
+        # 损失计算上下文
         with self.compute_loss_context_manager():
+            print("\n[损失计算] 进入计算上下文")
             loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
-
+            print(f"原始损失值: {loss.item():.4f} (设备: {loss.device}) | 类型: {type(loss)}")
+        
+        # 内存清理
         del inputs
-        if (
-            self.args.torch_empty_cache_steps is not None
-            and self.state.global_step % self.args.torch_empty_cache_steps == 0
-        ):
-            if is_torch_xpu_available():
-                torch.xpu.empty_cache()
-            elif is_torch_mlu_available():
-                torch.mlu.empty_cache()
-            elif is_torch_musa_available():
-                torch.musa.empty_cache()
-            elif is_torch_npu_available():
-                torch.npu.empty_cache()
-            elif is_torch_mps_available(min_version="2.0"):
-                torch.mps.empty_cache()
-            else:
-                torch.cuda.empty_cache()
-
+        print("\n[内存管理] 输入张量引用已释放")
+        
+        # 显存缓存清理
+        if self.args.torch_empty_cache_steps and self.state.global_step % self.args.torch_empty_cache_steps == 0:
+            print(f"\n[缓存清理] 在步骤 {self.state.global_step} 执行缓存释放")
+            backend = "XPU" if is_torch_xpu_available() else \
+                    "MLU" if is_torch_mlu_available() else \
+                    "MUSA" if is_torch_musa_available() else \
+                    "NPU" if is_torch_npu_available() else \
+                    "MPS" if is_torch_mps_available() else "CUDA"
+            print(f"  释放 {backend} 缓存")
+            torch.cuda.empty_cache() if backend == "CUDA" else getattr(torch, backend.lower()).empty_cache()
+        
+        # 优化器参数准备
         kwargs = {}
-
-        # For LOMO optimizers you need to explicitly use the learnign rate
         if self.args.optim in [OptimizerNames.LOMO, OptimizerNames.ADALOMO]:
-            kwargs["learning_rate"] = self._get_learning_rate()
-
+            lr = self._get_learning_rate()
+            kwargs["learning_rate"] = lr
+            print(f"\n[优化器参数] 设置学习率: {lr:.2e}")
+        
+        # 多GPU处理
         if self.args.n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu parallel training
-
+            print(f"\n[分布式处理] 平均化 {self.args.n_gpu} GPU 的损失值")
+            raw_loss = loss.item()
+            loss = loss.mean()
+            print(f"  损失值变化: {raw_loss:.4f} → {loss.item():.4f}")
+        
+        # 混合精度训练
         if self.use_apex:
+            print("\n[混合精度] 使用Apex缩放梯度")
             with amp.scale_loss(loss, self.optimizer) as scaled_loss:
                 scaled_loss.backward()
+            print(f"  原始损失: {loss.item():.4f} | 缩放损失: {scaled_loss.item():.4f}")
         else:
-            # Finally we need to normalize the loss for reporting
             if not self.model_accepts_loss_kwargs and self.compute_loss_func is None:
+                print(f"\n[梯度累积] 标准化损失 (步数: {self.args.gradient_accumulation_steps})")
+                raw_loss = loss.item()
                 loss = loss / self.args.gradient_accumulation_steps
-
+                print(f"  损失调整: {raw_loss:.4f} → {loss.item():.4f}")
+            
+            print("\n[反向传播] 执行加速器反向传播")
             self.accelerator.backward(loss, **kwargs)
+            grad_norm = self._get_grad_norm()
+            print(f"  当前梯度范数: {grad_norm:.4f} | 设备: {loss.device}")
+        
+        print("\n=== 训练步骤完成 ===" + "\n" + "="*60)
+        return loss.detach()
 
-            return loss.detach()
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         """
@@ -4252,47 +4288,101 @@ class Trainer:
 
         Subclass and override for custom behavior.
         """
+    # def ok100():
+        """执行模型前向传播与损失计算，提供全链路调试追踪"""
+        print("\n" + "="*60)
+        print("=== 开始损失计算流程 (ok100) ===")
+        
+        # 标签处理追踪
+        labels = None
         if (self.label_smoother is not None or self.compute_loss_func is not None) and "labels" in inputs:
+            print("\n[标签处理] 从输入中提取标签")
             labels = inputs.pop("labels")
+            print(f"标签形状: {labels.shape} | 设备: {labels.device}")
+            print(f"标签示例值:\n{labels[:2, :8] if labels.dim() >=2 else labels[:8]}")
         else:
-            labels = None
+            print("\n[标签处理] 未检测到标签字段，使用模型内置损失计算")
+        
+        # 模型输入增强
+        loss_kwargs = {}
         if self.model_accepts_loss_kwargs:
-            loss_kwargs = {}
+            print("\n[模型输入] 添加损失计算参数")
             if num_items_in_batch is not None:
                 loss_kwargs["num_items_in_batch"] = num_items_in_batch
-            inputs = {**inputs, **loss_kwargs}
-        outputs = model(**inputs)
-        # Save past state if it exists
-        # TODO: this needs to be fixed and made cleaner later.
+                print(f"添加批次项数参数: {num_items_in_batch}")
+            inputs = {**inputs,**loss_kwargs}
+        
+        # 输入数据审计
+        print("\n[前向传播] 输入数据结构:")
+        for k, v in inputs.items():
+            shape_str = f"shape={v.shape}" if hasattr(v, 'shape') else f"len={len(v)}"
+            device_str = f"device={v.device}" if hasattr(v, 'device') else 'non-tensor'
+            print(f"  {k.ljust(20)}: {str(type(v)).ljust(25)} {shape_str.ljust(15)} {device_str}")
+
+        # 执行前向传播
+        try:
+            outputs = model(**inputs)
+        except Exception as e:
+            print("\n!! 前向传播异常 !! 输入结构:")
+            print({k: type(v) for k, v in inputs.items()})
+            raise
+        
+        # 中间状态保存
         if self.args.past_index >= 0:
+            print(f"\n[状态缓存] 保存历史状态 (past_index={self.args.past_index})")
             self._past = outputs[self.args.past_index]
-
+            if isinstance(self._past, tuple):
+                print(f"缓存状态结构: tuple[各层形状={[p.shape for p in self._past]}]")
+            else:
+                print(f"缓存状态形状: {self._past.shape}")
+        
+        # 损失计算分支
+        loss = None
         if labels is not None:
+            print("\n=== 损失计算分支 ===")
             unwrapped_model = self.accelerator.unwrap_model(model)
-            if _is_peft_model(unwrapped_model):
-                model_name = unwrapped_model.base_model.model._get_name()
-            else:
-                model_name = unwrapped_model._get_name()
-            # User-defined compute_loss function
+            is_peft = _is_peft_model(unwrapped_model)
+            model_type = unwrapped_model.base_model.model._get_name() if is_peft else unwrapped_model._get_name()
+            print(f"模型类型: {model_type} | PEFT模型: {'是' if is_peft else '否'}")
+
             if self.compute_loss_func is not None:
+                print("[计算方式] 使用自定义损失函数")
                 loss = self.compute_loss_func(outputs, labels, num_items_in_batch=num_items_in_batch)
-            elif model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
+            elif model_type in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
+                print("[计算方式] 因果语言模型标签平滑 (shift_labels=True)")
                 loss = self.label_smoother(outputs, labels, shift_labels=True)
+                print(f"原始损失: {loss.item():.4f} | 平滑因子: {self.label_smoother.epsilon}")
             else:
+                print("[计算方式] 标准标签平滑")
                 loss = self.label_smoother(outputs, labels)
+                print(f"平滑后损失: {loss.item():.4f}")
         else:
-            if isinstance(outputs, dict) and "loss" not in outputs:
-                raise ValueError(
-                    "The model did not return a loss from the inputs, only the following keys: "
-                    f"{','.join(outputs.keys())}. For reference, the inputs it received are {','.join(inputs.keys())}."
-                )
-            # We don't use .loss here since the model may return tuples instead of ModelOutput.
-            loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+            print("\n=== 自动损失提取 ===")
+            if isinstance(outputs, dict):
+                print(f"模型输出包含的键: {list(outputs.keys())}")
+                if "loss" not in outputs:
+                    error_msg = f"模型未返回loss字段，可用字段: {outputs.keys()}"
+                    print(f"!! 错误: {error_msg}")
+                    raise ValueError(error_msg)
+                loss = outputs["loss"]
+            else:
+                print("模型返回结果为非字典类型，提取第一个元素作为损失")
+                loss = outputs[0]
+            print(f"直接获取损失值: {loss.item():.4f}")
 
+        # 分布式损失调整
         if self.args.average_tokens_across_devices and self.model_accepts_loss_kwargs:
+            print(f"\n[分布式调整] 进程数: {self.accelerator.num_processes}")
+            original_loss = loss.item()
             loss *= self.accelerator.num_processes
+            print(f"损失调整: {original_loss:.4f} → {loss.item():.4f}")
 
+        print("\n=== 计算结果 ===")
+        print(f"最终损失值: {loss.item():.4f} | 设备: {loss.device}")
+        print("="*60 + "\n")
+        
         return (loss, outputs) if return_outputs else loss
+
 
     def is_local_process_zero(self) -> bool:
         """
@@ -5687,8 +5777,11 @@ class Trainer:
         success_count = 0
         for attempt in range(num_batches):
             try:
+                print("获取下个数据)))))))")
                 batch = next(epoch_iterator)
+                print("获取下个数据完毕++++")
                 batch_samples.append(batch)
+                print("获取下个数据完毕===========")
                 success_count += 1
                 print(f"  成功获取第 {attempt+1}/{num_batches} 个批次 | 批次键: {list(batch.keys())}")
             except StopIteration:
