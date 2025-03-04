@@ -2838,8 +2838,12 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
                 list of strings (pretokenized string). If the sequences are provided as list of strings (pretokenized),
                 you must set `is_split_into_words=True` (to lift the ambiguity with a batch of sequences).
         """
+    # def ok():
+        print("\n=== 开始执行文本编码流程 ===")
         print("调用处理函数")
-        # To avoid duplicating
+        
+        # 参数收集阶段
+        print("[参数初始化] 收集基础参数")
         all_kwargs = {
             "add_special_tokens": add_special_tokens,
             "padding": padding,
@@ -2859,28 +2863,74 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
             "split_special_tokens": kwargs.pop("split_special_tokens", self.split_special_tokens),
             "verbose": verbose,
         }
+        print(f"基础参数集: {list(all_kwargs.keys())}")
+        
+        # 合并动态参数
+        print(f"[参数合并] 接收到额外参数: {kwargs.keys()}")
         all_kwargs.update(kwargs)
+        print(f"最终参数数量: {len(all_kwargs)} | 示例参数: truncation={truncation}, max_length={max_length}")
+
+        # 输入验证
+        print("\n[输入验证] 检查text/text_target有效性")
         if text is None and text_target is None:
+            print("❌ 错误: text和text_target参数均为空")
             raise ValueError("You need to specify either `text` or `text_target`.")
+        print(f"输入状态: text存在={text is not None} | text_target存在={text_target is not None}")
+
+        encodings = None
+        target_encodings = None
+
+        # 主文本处理分支
         if text is not None:
-            # The context manager will send the inputs as normal texts and not text_target, but we shouldn't change the
-            # input mode in this case.
+            print("\n[主文本处理]")
+            print(f"当前上下文模式: {'target' if self._in_target_context_manager else 'input'}")
             if not self._in_target_context_manager:
+                print("切换到输入模式...")
                 self._switch_to_input_mode()
+            
+            print(f"输入类型: {type(text)} | 样本数量: {len(text) if isinstance(text, list) else 1}")
+            if isinstance(text, list):
+                print(f"首样本预览: {text[0][:50]}..." if len(text[0]) > 50 else text[0])
+            
+            print("执行核心编码操作...")
             encodings = self._call_one(text=text, text_pair=text_pair, **all_kwargs)
+            print(f"获得编码结果: 包含{len(encodings['input_ids'])}个序列")
+
+        # 目标文本处理分支
         if text_target is not None:
+            print("\n[目标文本处理]")
+            print("切换到目标模式...")
             self._switch_to_target_mode()
+            
+            print(f"目标文本类型: {type(text_target)} | 样本数量: {len(text_target) if isinstance(text_target, list) else 1}")
+            if isinstance(text_target, list):
+                print(f"目标首样本预览: {text_target[0][:50]}..." if len(text_target[0]) > 50 else text_target[0])
+            
+            print("执行目标编码操作...")
             target_encodings = self._call_one(text=text_target, text_pair=text_pair_target, **all_kwargs)
-        # Leave back tokenizer in input mode
+            print(f"获得目标编码: 包含{len(target_encodings['input_ids'])}个序列")
+
+        # 恢复默认模式
+        print("\n[环境清理] 恢复输入模式")
         self._switch_to_input_mode()
 
+        # 结果整合
+        print("\n[结果整合]")
         if text_target is None:
+            print("返回主编码结果")
             return encodings
         elif text is None:
+            print("返回目标编码结果")
             return target_encodings
         else:
+            print("合并主编码与目标编码")
+            print(f"主编码ID形状: {encodings['input_ids'].shape} | 目标编码ID形状: {target_encodings['input_ids'].shape}")
             encodings["labels"] = target_encodings["input_ids"]
+            print("最终返回结果包含字段:", encodings.keys())
             return encodings
+
+        print("\n=== 编码流程执行完毕 ===")
+
 
     def _call_one(
         self,
@@ -2905,59 +2955,85 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
         split_special_tokens: bool = False,
         **kwargs,
     ) -> BatchEncoding:
-        print("触发一次")
-        # Input type checking for clearer error
+    
+    # def ok():
+        print("\n" + "="*50)
+        print("执行文本编码预处理流程")
+        print("="*50)
+        
+        print("[步骤1] 输入类型校验")
+        # 定义类型校验函数（带调试输出）
         def _is_valid_text_input(t):
+            print(f"校验输入类型: {type(t)}")
             if isinstance(t, str):
-                # Strings are fine
+                print("√ 有效文本类型: 字符串")
                 return True
             elif isinstance(t, (list, tuple)):
-                # List are fine as long as they are...
                 if len(t) == 0:
-                    # ... empty
+                    print("√ 有效文本类型: 空列表")
                     return True
                 elif isinstance(t[0], str):
-                    # ... list of strings
+                    print(f"√ 有效文本类型: 字符串列表 (首元素长度: {len(t[0]) if t else 0})")
                     return True
                 elif isinstance(t[0], (list, tuple)):
-                    # ... list with an empty list or with a list of strings
-                    return len(t[0]) == 0 or isinstance(t[0][0], str)
+                    sub_valid = len(t[0]) == 0 or isinstance(t[0][0], str)
+                    print(f"△ 嵌套列表类型: 元素数 {len(t)} 有效性: {sub_valid}")
+                    return sub_valid
                 else:
+                    print(f"× 无效列表元素类型: {type(t[0])}")
                     return False
             else:
+                print(f"× 未知输入类型: {type(t)}")
                 return False
 
+        # 主输入校验
+        print("\n[主输入校验]")
         if not _is_valid_text_input(text):
-            raise ValueError(
-                "text input must be of type `str` (single example), `List[str]` (batch or single pretokenized example) "
-                "or `List[List[str]]` (batch of pretokenized examples)."
-            )
+            error_msg = f"无效文本输入类型: {type(text)}"
+            print(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        # 配对输入校验
+        if text_pair is not None:
+            print("\n[配对输入校验]")
+            if not _is_valid_text_input(text_pair):
+                error_msg = f"无效配对输入类型: {type(text_pair)}"
+                print(f"❌ {error_msg}")
+                raise ValueError(error_msg)
 
-        if text_pair is not None and not _is_valid_text_input(text_pair):
-            raise ValueError(
-                "text input must be of type `str` (single example), `List[str]` (batch or single pretokenized example) "
-                "or `List[List[str]]` (batch of pretokenized examples)."
-            )
-
+        # 批处理模式判断
+        print("\n[批处理判断]")
         if is_split_into_words:
             is_batched = isinstance(text, (list, tuple)) and text and isinstance(text[0], (list, tuple))
+            print(f"分词模式: {'已预分词' if is_split_into_words else '未预分词'} → 批处理状态: {is_batched}")
         else:
             is_batched = isinstance(text, (list, tuple))
+            print(f"标准模式批处理判断: {is_batched}")
 
+        # 批处理一致性检查
         if is_batched:
-            if isinstance(text_pair, str):
-                raise TypeError(
-                    "when tokenizing batches of text, `text_pair` must be a list or tuple with the same length as"
-                    " `text`."
-                )
-            if text_pair is not None and len(text) != len(text_pair):
-                raise ValueError(
-                    f"batch length of `text`: {len(text)} does not match batch length of `text_pair`:"
-                    f" {len(text_pair)}."
-                )
-            batch_text_or_text_pairs = list(zip(text, text_pair)) if text_pair is not None else text
+            print("\n[批处理验证]")
+            if text_pair is not None:
+                print(f"主输入批次大小: {len(text)} | 配对输入批次大小: {len(text_pair) if text_pair else 0}")
+                if not isinstance(text_pair, (list, tuple)):
+                    error_msg = "配对输入必须为列表/元组"
+                    print(f"❌ {error_msg}")
+                    raise TypeError(error_msg)
+                if len(text) != len(text_pair):
+                    error_msg = f"批次大小不匹配: 主输入{len(text)} vs 配对输入{len(text_pair)}"
+                    print(f"❌ {error_msg}")
+                    raise ValueError(error_msg)
+                print("✓ 批次尺寸一致")
+                batch_samples = list(zip(text, text_pair))
+                print(f"生成批次样本数: {len(batch_samples)} | 首样本预览: {batch_samples[0][0][:30]}...")
+            else:
+                batch_samples = text
+                print(f"独立批次样本数: {len(batch_samples)} | 首样本预览: {batch_samples[0][:30]}...")
+
+            print("\n[批处理编码启动]")
+            print(f"关键参数: padding={padding} | truncation={truncation} | max_length={max_length}")
             return self.batch_encode_plus(
-                batch_text_or_text_pairs=batch_text_or_text_pairs,
+                batch_text_or_text_pairs=batch_samples,
                 add_special_tokens=add_special_tokens,
                 padding=padding,
                 truncation=truncation,
@@ -2973,33 +3049,30 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
                 return_special_tokens_mask=return_special_tokens_mask,
                 return_offsets_mapping=return_offsets_mapping,
                 return_length=return_length,
-                verbose=verbose,
-                split_special_tokens=split_special_tokens,
-                **kwargs,
             )
-        else:
-            return self.encode_plus(
-                text=text,
-                text_pair=text_pair,
-                add_special_tokens=add_special_tokens,
-                padding=padding,
-                truncation=truncation,
-                max_length=max_length,
-                stride=stride,
-                is_split_into_words=is_split_into_words,
-                pad_to_multiple_of=pad_to_multiple_of,
-                padding_side=padding_side,
-                return_tensors=return_tensors,
-                return_token_type_ids=return_token_type_ids,
-                return_attention_mask=return_attention_mask,
-                return_overflowing_tokens=return_overflowing_tokens,
-                return_special_tokens_mask=return_special_tokens_mask,
-                return_offsets_mapping=return_offsets_mapping,
-                return_length=return_length,
-                verbose=verbose,
-                split_special_tokens=split_special_tokens,
-                **kwargs,
-            )
+
+        print("\n[单样本编码模式]")
+        print(f"输入样本预览: {text[:100]}...")
+        return self.encode_plus(
+            text=text,
+            text_pair=text_pair,
+            add_special_tokens=add_special_tokens,
+            padding=padding,
+            truncation=truncation,
+            max_length=max_length,
+            stride=stride,
+            is_split_into_words=is_split_into_words,
+            pad_to_multiple_of=pad_to_multiple_of,
+            padding_side=padding_side,
+            return_tensors=return_tensors,
+            return_token_type_ids=return_token_type_ids,
+            return_attention_mask=return_attention_mask,
+            return_overflowing_tokens=return_overflowing_tokens,
+            return_special_tokens_mask=return_special_tokens_mask,
+            return_offsets_mapping=return_offsets_mapping,
+            return_length=return_length,
+        )
+
 
     @add_end_docstrings(ENCODE_KWARGS_DOCSTRING, ENCODE_PLUS_ADDITIONAL_KWARGS_DOCSTRING)
     def encode_plus(
