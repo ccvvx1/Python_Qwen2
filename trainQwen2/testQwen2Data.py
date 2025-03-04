@@ -1,10 +1,31 @@
 from datasets import load_dataset
 
-# Load the dataset
-# dataset = load_dataset("Magpie-Align/Magpie-Reasoning-V2-250K-CoT-Deepseek-R1-Llama-70B", token="YOUR_HF_TOKEN")
-dataset = load_dataset("Magpie-Align/Magpie-Reasoning-V2-250K-CoT-Deepseek-R1-Llama-70B")
-# dataset = load_dataset("Congliu/Chinese-DeepSeek-R1-Distill-data-110k")
-dataset = dataset["train"]
+# # Load the dataset
+# # dataset = load_dataset("Magpie-Align/Magpie-Reasoning-V2-250K-CoT-Deepseek-R1-Llama-70B", token="YOUR_HF_TOKEN")
+# dataset = load_dataset("Magpie-Align/Magpie-Reasoning-V2-250K-CoT-Deepseek-R1-Llama-70B")
+# # dataset = load_dataset("Congliu/Chinese-DeepSeek-R1-Distill-data-110k")
+# dataset = dataset["train"]
+
+
+from datasets import DatasetDict, Dataset
+
+data = {
+    "train": [
+        {"instruction": "你好吗", "response": "<think>说的是什么</think>你大爷是吧"},
+        {"instruction": "不会吧啊", "response": "<think>不太懂</think>你真好"},
+        {"instruction": "天气不错啊", "response": "<think>向天</think>天天晒太阳"},
+        {"instruction": "配套也是不错的", "response": "<think>啰嗦</think>非常标准的配套"},
+        {"instruction": "厂商服务到位是的", "response": "<think>天啊</think>昨天的描述"},
+    ]
+}
+
+# 构造分片数据集
+dataset_dict = DatasetDict({
+    "train": Dataset.from_list(data["train"])  # 将列表转换为Dataset对象‌:ml-citation{ref="1,4" data="citationList"}
+})
+
+dataset = dataset_dict["train"]  # 正确访问分片
+# sub_dataset = dataset.select(range(5))  # 可正常操作
 
 sub_dataset = dataset.select(range(5))  # 假设需要处理train分片
 
@@ -21,7 +42,9 @@ def format_instruction(example):
         )
     }
 
-formatted_dataset = sub_dataset.map(format_instruction, batched=False, remove_columns=['conversation_id', 'conversations', 'gen_input_configs', 'gen_response_configs', 'intent', 'knowledge', 'difficulty', 'difficulty_generator', 'input_quality', 'quality_explanation', 'quality_generator', 'task_category', 'other_task_category', 'task_category_generator', 'language'])
+# formatted_dataset = sub_dataset.map(format_instruction, batched=False, remove_columns=['conversation_id', 'conversations', 'gen_input_configs', 'gen_response_configs', 'intent', 'knowledge', 'difficulty', 'difficulty_generator', 'input_quality', 'quality_explanation', 'quality_generator', 'task_category', 'other_task_category', 'task_category_generator', 'language'])
+formatted_dataset = sub_dataset.map(format_instruction, batched=False)
+
 # formatted_dataset = sub_dataset.map(format_instruction, batched=False)
 formatted_dataset = formatted_dataset.train_test_split(test_size=0.1)  # 90-10 train-test split
 
