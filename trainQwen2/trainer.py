@@ -2252,7 +2252,7 @@ class Trainer:
             train_dataloader = tpu_spmd_dataloader(train_dataloader)
             print("7.1 TPU SPMD数据加载器已应用")
         
-        print("\n8. 数据处理流程完成")
+        # print("\n8. 数据处理流程完成")
 
 
         # Setting up training control variables:
@@ -5679,25 +5679,52 @@ class Trainer:
                 )
 
     def get_batch_samples(self, epoch_iterator, num_batches):
+        print(f"\n==== 获取批次样本 [目标批次数: {num_batches}] ====")
         batch_samples = []
         num_items_in_batch = None
-        for _ in range(num_batches):
+        
+        # 尝试获取指定数量的批次
+        success_count = 0
+        for attempt in range(num_batches):
             try:
-                batch_samples += [next(epoch_iterator)]
+                batch = next(epoch_iterator)
+                batch_samples.append(batch)
+                success_count += 1
+                print(f"  成功获取第 {attempt+1}/{num_batches} 个批次 | 批次键: {list(batch.keys())}")
             except StopIteration:
+                print(f"  !! 在第 {attempt+1} 次尝试时遇到数据迭代器终止")
                 break
+        
+        print(f"实际获取批次数: {success_count}/{num_batches}")
 
+        # 标签统计逻辑
         if len(batch_samples) > 0 and "labels" in batch_samples[0]:
-            # For now we don't support object detection
+            print("\n[标签统计] 开始计算有效标签数量")
             try:
-                num_items_in_batch = sum([(batch["labels"].ne(-100)).sum() for batch in batch_samples])
-            except (TypeError, AttributeError):
-                pass
-
+                label_masks = [batch["labels"].ne(-100) for batch in batch_samples]
+                valid_counts = [mask.sum() for mask in label_masks]
+                num_items_in_batch = sum(valid_counts)
+                print(f"  各批次有效标签数: {valid_counts} → 总计: {num_items_in_batch}")
+            except (TypeError, AttributeError) as e:
+                print(f"  !! 标签统计异常: {type(e).__name__} - {str(e)}")
+                print("  跳过标签数量统计")
+        else:
+            print("\n[标签统计] 未检测到 labels 字段或空批次")
+        
+        # 分布式设备聚合
         if self.args.average_tokens_across_devices and num_items_in_batch is not None:
-            num_items_in_batch = self.accelerator.gather(num_items_in_batch).sum().item()
-
+            print(f"\n[分布式聚合] 聚合各设备的 token 统计 (原始值: {num_items_in_batch})")
+            gathered = self.accelerator.gather(num_items_in_batch)
+            num_items_in_batch = gathered.sum().item()
+            print(f"  聚合后总 token 数: {num_items_in_batch} (来自 {len(gathered)} 个设备)")
+        
+        # 张量转标量处理
         if torch.is_tensor(num_items_in_batch):
+            print(f"[类型转换] 检测到张量类型，转换为标量 (原始值: {num_items_in_batch})")
             num_items_in_batch = num_items_in_batch.item()
-
+        
+        print(f"\n==== 返回结果 ====")
+        print(f"批次样本数: {len(batch_samples)}")
+        print(f"有效标签总数: {num_items_in_batch if num_items_in_batch is not None else 'N/A'}")
         return batch_samples, num_items_in_batch
+
