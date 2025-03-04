@@ -485,6 +485,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         if special_tokens:
             return self._tokenizer.add_special_tokens(new_tokens)
 
+        print("token类型：", self._tokenizer)
         return self._tokenizer.add_tokens(new_tokens)
 
     def num_special_tokens_to_add(self, pair: bool = False) -> int:
@@ -639,12 +640,19 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         split_special_tokens: bool = False,
     ) -> BatchEncoding:
         print("进行细节操作")
+    # def ok():
+        # 输入类型检查
+        print(f"开始输入类型检查，输入类型为：{type(batch_text_or_text_pairs)}")
         if not isinstance(batch_text_or_text_pairs, (tuple, list)):
             raise TypeError(
                 f"batch_text_or_text_pairs has to be a list or a tuple (got {type(batch_text_or_text_pairs)})"
             )
+        print("√ 输入类型检查通过，类型为列表/元组")
 
-        # Set the truncation and padding strategy and restore the initial configuration
+        # 设置截断与填充策略
+        print("\n开始设置截断与填充策略...")
+        print(f"参数详情: padding_strategy={padding_strategy}, truncation_strategy={truncation_strategy}, "
+              f"max_length={max_length}, stride={stride}, pad_to_multiple_of={pad_to_multiple_of}")
         self.set_truncation_and_padding(
             padding_strategy=padding_strategy,
             truncation_strategy=truncation_strategy,
@@ -653,22 +661,35 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             pad_to_multiple_of=pad_to_multiple_of,
             padding_side=padding_side,
         )
+        print("√ 策略设置完成")
 
+        # 检查特殊token分割设置
+        print(f"\n检查特殊token分割: 当前split_special_tokens={split_special_tokens}，"
+              f"与当前设置{self._tokenizer.encode_special_tokens}是否一致？")
         if self._tokenizer.encode_special_tokens != split_special_tokens:
             self._tokenizer.encode_special_tokens = split_special_tokens
+            print("→ 检测到不一致，已更新split_special_tokens设置")
+        else:
+            print("→ 设置一致，无需修改")
 
+        # 批量编码过程
+        print("\n开始批量编码...")
+        print(f"参数详情: add_special_tokens={add_special_tokens}, is_split_into_words={is_split_into_words}")
+        print(f"样本数量: {len(batch_text_or_text_pairs)}")
+        print("首样本示例:", batch_text_or_text_pairs[0][:50] + "...")  # 打印首样本前50字符
+        
+        # print("使用的_tokenizer类：", self._tokenizer)
         encodings = self._tokenizer.encode_batch(
             batch_text_or_text_pairs,
             add_special_tokens=add_special_tokens,
             is_pretokenized=is_split_into_words,
         )
+        print(f"√ 编码完成，共获得{len(encodings)}个编码结果")
+        print("首编码结构示例:", type(encodings[0]), "长度:", len(encodings[0]))
 
-        # Convert encoding to dict
-        # `Tokens` has type: Tuple[
-        #                       List[Dict[str, List[List[int]]]] or List[Dict[str, 2D-Tensor]],
-        #                       List[EncodingFast]
-        #                    ]
-        # with nested dimensions corresponding to batch, overflows, sequence length
+        # 编码结果转换
+        print("\n开始编码转换...")
+        print(f"返回参数: return_token_type_ids={return_token_type_ids}, return_attention_mask={return_attention_mask}")
         tokens_and_encodings = [
             self._convert_encoding(
                 encoding=encoding,
@@ -682,30 +703,67 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             )
             for encoding in encodings
         ]
+        print("√ 转换完成")
+        print("首元素转换结果示例 - 字典键:", tokens_and_encodings[0][0].keys())
+        print("首元素编码信息类型:", type(tokens_and_encodings[0][1]))
 
-        # Convert the output to have dict[list] from list[dict] and remove the additional overflows dimension
-        # From (variable) shape (batch, overflows, sequence length) to ~ (batch * overflows, sequence length)
-        # (we say ~ because the number of overflow varies with the example in the batch)
-        #
-        # To match each overflowing sample with the original sample in the batch
-        # we add an overflow_to_sample_mapping array (see below)
+        # 数据格式整理
+        print("\n开始数据清洗与格式整理...")
         sanitized_tokens = {}
         for key in tokens_and_encodings[0][0].keys():
             stack = [e for item, _ in tokens_and_encodings for e in item[key]]
             sanitized_tokens[key] = stack
+            print(f"字段 {key} 数据量: {len(stack)}")  # 各字段数据量统计
+        
         sanitized_encodings = [e for _, item in tokens_and_encodings for e in item]
+        print(f"清洗后总编码数: {len(sanitized_encodings)}")
 
-        # If returning overflowing tokens, we need to return a mapping
-        # from the batch idx to the original sample
+
+        print("\n=== 开始处理溢出token映射 ===")
+        
+        # 溢出token映射处理
+        overflow_to_sample_mapping = []
         if return_overflowing_tokens:
-            overflow_to_sample_mapping = []
+            print("\n生成溢出token映射关系...")
+            print(f"总样本数: {len(tokens_and_encodings)}")
+            
             for i, (toks, _) in enumerate(tokens_and_encodings):
-                overflow_to_sample_mapping += [i] * len(toks["input_ids"])
-            sanitized_tokens["overflow_to_sample_mapping"] = overflow_to_sample_mapping
+                print(f"\n正在处理样本 {i}:")
+                print("原始token数:", len(toks['input_ids']))
+                
+                # 获取当前样本溢出次数
+                overflow_count = len(toks['input_ids'])  # 每个块视为一次"溢出"
+                print(f"溢出次数计算: len(input_ids) = {overflow_count}")
+                
+                # 生成映射关系
+                mapping_segment = [i] * overflow_count
+                print(f"添加映射段: {mapping_segment}")
+                
+                overflow_to_sample_mapping += mapping_segment
+                print(f"更新后的映射数组: {overflow_to_sample_mapping[-overflow_count:]}")
 
-        for input_ids in sanitized_tokens["input_ids"]:
+                print(f"样本 {i} 处理完成，累计映射数: {len(overflow_to_sample_mapping)}")
+            
+            print("\n最终映射数组生成:")
+            print(f"总映射数: {len(overflow_to_sample_mapping)}")
+            print("前10个映射索引:", overflow_to_sample_mapping[:10])
+            
+            sanitized_tokens["overflow_to_sample_mapping"] = overflow_to_sample_mapping
+            print("\n映射关系已存入sanitized_tokens")
+        
+        # 长度校验
+        print("\n开始序列长度校验...")
+        for idx, input_ids in enumerate(sanitized_tokens["input_ids"]):
+            print(f"校验序列 {idx}，长度: {len(input_ids)}")
             self._eventual_warn_about_too_long_sequence(input_ids, max_length, verbose)
-        return BatchEncoding(sanitized_tokens, sanitized_encodings, tensor_type=return_tensors)
+        
+        print("\n生成最终BatchEncoding对象")
+        return BatchEncoding(
+            sanitized_tokens, 
+            sanitized_encodings, 
+            tensor_type=return_tensors
+        )
+
 
     def _encode_plus(
         self,
@@ -730,7 +788,24 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         split_special_tokens: bool = False,
         **kwargs,
     ) -> BatchEncoding:
-        batched_input = [(text, text_pair)] if text_pair else [text]
+    # def ok():
+        print("开始执行ok方法，准备处理输入文本/文本对...")
+        
+        # 构造批量输入数据
+        if text_pair:
+            print(f"检测到文本对输入，将text和text_pair包装成元组列表。text长度: {len(text)}, text_pair长度: {len(text_pair)}")
+            batched_input = [(text, text_pair)]
+        else:
+            print(f"单文本输入模式，将text包装成单元素列表。text长度: {len(text)}")
+            batched_input = [text]
+        
+        print("\n开始调用核心编码方法_batch_encode_plus，参数详情:")
+        print(f"• 填充策略: {padding_strategy.name}")          # 例如 PaddingStrategy.LONGEST
+        print(f"• 截断策略: {truncation_strategy.name}")       # 例如 TruncationStrategy.LONGEST_FIRST
+        print(f"• 最大长度: {max_length} | 步长: {stride}")
+        print(f"• 返回张量类型: {return_tensors}")
+        print(f"• 特殊token拆分: {split_special_tokens}")
+        
         batched_output = self._batch_encode_plus(
             batched_input,
             is_split_into_words=is_split_into_words,
@@ -752,22 +827,33 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             split_special_tokens=split_special_tokens,
             **kwargs,
         )
-        print("加密中=========")
-
-        # Return tensor is None, then we can remove the leading batch axis
-        # Overflowing tokens are returned as a batch of output so we keep them in this case
+        print("\n_batch_encode_plus执行完成，输出包含以下键:", batched_output.keys())
+        
+        print("\n加密中=========")  # 原调试信息保留
+        
+        # 后处理逻辑
         if return_tensors is None and not return_overflowing_tokens:
-            batched_output = BatchEncoding(
-                {
-                    key: (value[0] if len(value) > 0 and isinstance(value[0], list) else value)
-                    for key, value in batched_output.items()
-                },
-                batched_output.encodings,
-            )
-
+            print("\n进入后处理分支：return_tensors=None且不需要溢出token")
+            print("正在移除批次维度，检查首元素类型...")
+            
+            processed_data = {
+                key: (value[0] if len(value) > 0 and isinstance(value[0], list) else value)
+                for key, value in batched_output.items()
+            }
+            print("维度处理后数据样例:", {k: v[:1] for k, v in processed_data.items()})  # 显示部分数据
+            
+            batched_output = BatchEncoding(processed_data, batched_output.encodings)
+            print("已重新封装为BatchEncoding对象")
+        else:
+            print("\n跳过维度处理：需要返回张量或包含溢出token")
+        
+        # 长度警告检查
+        print("\n正在检查输入序列长度是否超过模型限制...")
         self._eventual_warn_about_too_long_sequence(batched_output["input_ids"], max_length, verbose)
-
+        
+        print("\n处理完成，返回最终编码结果")
         return batched_output
+
 
     def convert_tokens_to_string(self, tokens: List[str]) -> str:
         return (

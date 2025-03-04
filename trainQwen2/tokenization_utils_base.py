@@ -3116,8 +3116,25 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
                 the `tokenize` method) or a list of integers (tokenized string ids using the `convert_tokens_to_ids`
                 method).
         """
-
-        # Backward compatibility for 'truncation_strategy', 'pad_to_max_length'
+    # def ok():
+        print("\n" + "="*60)
+        print("启动文本编码核心流程")
+        print("="*60)
+        
+        # 策略参数获取阶段
+        print("\n[策略参数解析]")
+        print(f"原始参数 | padding: {padding} | truncation: {truncation} | max_length: {max_length}")
+        print(f"兼容性参数检测: kwargs={kwargs.keys()}")
+        
+        # 向后兼容处理（带警告提示）
+        if 'truncation_strategy' in kwargs or 'pad_to_max_length' in kwargs:
+            print("⚠️  检测到旧版参数:")
+            if 'truncation_strategy' in kwargs:
+                print(f"   truncation_strategy={kwargs['truncation_strategy']} → 将转换为truncation参数")
+            if 'pad_to_max_length' in kwargs:
+                print(f"   pad_to_max_length={kwargs['pad_to_max_length']} → 将转换为padding参数")
+        
+        # 获取策略参数
         padding_strategy, truncation_strategy, max_length, kwargs = self._get_padding_truncation_strategies(
             padding=padding,
             truncation=truncation,
@@ -3126,8 +3143,30 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
             verbose=verbose,
             **kwargs,
         )
+        
+        print("\n[最终策略决策]")
+        print(f"填充策略: {padding_strategy.name} | 截断策略: {truncation_strategy.name}")
+        print(f"生效的最大长度: {max_length} | 对齐倍数: {pad_to_multiple_of or '无'}")
+        if padding_strategy != PaddingStrategy.DO_NOT_PAD:
+            print(f"填充方向: {padding_side} | 张量类型: {return_tensors}")
 
-        return self._encode_plus(
+        # 编码执行阶段
+        print("\n[编码参数传递]")
+        print("传递至_encode_plus的关键参数:")
+        args_table = [
+            ("text类型", type(text).__name__),
+            ("text_pair存在", str(text_pair is not None)),
+            ("添加特殊标记", add_special_tokens),
+            ("分词语模式", is_split_into_words),
+            ("步长", stride),
+            ("返回张量", return_tensors),
+            ("特殊标记分割", kwargs.get("split_special_tokens", self.split_special_tokens))
+        ]
+        for name, value in args_table:
+            print(f"  {name.ljust(15)}: {value}")
+        
+        print("\n执行_encode_plus...")
+        result = self._encode_plus(
             text=text,
             text_pair=text_pair,
             add_special_tokens=add_special_tokens,
@@ -3149,6 +3188,21 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
             split_special_tokens=kwargs.pop("split_special_tokens", self.split_special_tokens),
             **kwargs,
         )
+        
+        # 结果验证
+        print("\n[编码结果验证]")
+        print(f"获得输出字段: {list(result.keys())}")
+        if 'input_ids' in result:
+            shape = result['input_ids'].shape if hasattr(result['input_ids'], 'shape') else len(result['input_ids'])
+            print(f"输入ID维度: {shape} | 类型: {type(result['input_ids'])}")
+        # if 'attention_mask' in result:
+        #     print(f"注意力掩码示例: {result['attention_mask'][0][:10]}...")
+        
+        print("\n" + "="*60)
+        print("编码流程完成")
+        print("="*60)
+        return result
+
 
     def _encode_plus(
         self,

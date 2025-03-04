@@ -1,0 +1,12 @@
+__pyache__
+decoders/__pyache__
+implementations/__pyache__
+models/__pyache__  
+normalizers/__pyache__  
+pre_tokenizers__pyache__
+processors/__pyache__
+__pycache__/__pyache__
+tokenizers.abi3.so  
+tools/__pyache__  
+trainers/__pyache__
+*.pyi
