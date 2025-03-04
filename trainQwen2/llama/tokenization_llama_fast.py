@@ -235,6 +235,8 @@ class LlamaTokenizerFast(PreTrainedTokenizerFast):
         
         print("Q:单句和句对有什么作用？")
         print("A:为单句（single）和句对（pair）输入自动添加模型所需的特殊符号（如 [CLS]、[SEP]）")
+        print("Q:为什么tokenizer库的单句和句对不需要输入id？只需要输入字符串")
+        print("A:后面训练时会重新编码成id，而且id也是需要输入的，填入tokenizer这个库的special_tokens这个字段里，这个字段是接收list的入参")
         import sys, os
         print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
         # 更新后处理器

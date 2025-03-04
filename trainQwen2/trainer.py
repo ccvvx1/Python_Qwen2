@@ -2204,486 +2204,942 @@ class Trainer:
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
     ):
+    # def ok():
+        print("\n1. 进入函数，开始处理流程...")
         print("开始循环处理数据...")
+        
+        print("\n2. 释放加速器内存...")
         self.accelerator.free_memory()
+        
+        print(f"3. 设置训练批量大小为: {batch_size}")
         self._train_batch_size = batch_size
+        
         if self.args.auto_find_batch_size:
+            print("\n4. 进入自动批量大小调整模式")
             if self.state.train_batch_size != self._train_batch_size:
+                print(f"4.1 检测到批量大小变化 | 旧值: {self.state.train_batch_size} -> 新值: {self._train_batch_size}")
+                print("4.2 执行内存释放和模型重加载...")
                 from accelerate.utils import release_memory
-
+                print("4.3 调用release_memory释放模型内存...")
                 (self.model_wrapped,) = release_memory(self.model_wrapped)
+                print("4.4 重新绑定模型对象...")
                 self.model_wrapped = self.model
-
-                # Check for DeepSpeed *after* the intial pass and modify the config
+                
                 if self.is_deepspeed_enabled:
-                    # Temporarily unset `self.args.train_batch_size`
+                    print("\n4.5 检测到DeepSpeed启用，开始适配配置")
                     original_bs = self.args.per_device_train_batch_size
+                    print(f"4.6 临时修改每设备批量大小 | 原值: {original_bs} -> 新值: {self._train_batch_size // max(1, self.args.n_gpu)}")
                     self.args.per_device_train_batch_size = self._train_batch_size // max(1, self.args.n_gpu)
+                    print("4.7 传播参数到DeepSpeed配置...")
                     self.propagate_args_to_deepspeed(True)
+                    print(f"4.8 恢复原始每设备批量大小: {original_bs}")
                     self.args.per_device_train_batch_size = original_bs
+            else:
+                print("4.1 批量大小未变化，跳过内存释放")
+                
+            print(f"4.9 更新状态中的训练批量大小为: {self._train_batch_size}")
             self.state.train_batch_size = self._train_batch_size
+        
+        print(f"\n5. 当前训练批量大小: {self._train_batch_size}")
         logger.debug(f"Currently training with a batch size of: {self._train_batch_size}")
-        # Data loader and number of training steps
+        
+        print("\n6. 初始化训练数据加载器...")
         train_dataloader = self.get_train_dataloader()
+        print(f"6.1 数据加载器类型: {type(train_dataloader).__name__}")
+        
         if self.is_fsdp_xla_v2_enabled:
+            print("\n7. 检测到FSDP-XLA v2启用，适配数据加载器")
             train_dataloader = tpu_spmd_dataloader(train_dataloader)
+            print("7.1 TPU SPMD数据加载器已应用")
+        
+        print("\n8. 数据处理流程完成")
+
 
         # Setting up training control variables:
         # number of training epochs: num_train_epochs
         # number of training steps per epoch: num_update_steps_per_epoch
         # total number of training steps to execute: max_steps
+    # def ok():
+        # 计算总训练批次大小（考虑梯度累积和分布式训练）
         total_train_batch_size = self._train_batch_size * args.gradient_accumulation_steps * args.world_size
+        print(f"[计算总批次大小] total_train_batch_size = {self._train_batch_size} * {args.gradient_accumulation_steps} * {args.world_size} = {total_train_batch_size}")
 
         len_dataloader = None
         num_train_tokens = None
+        print(f"[初始化] len_dataloader = {len_dataloader}, num_train_tokens = {num_train_tokens}")
+
+        # 如果数据加载器有明确长度（如非流式数据）
         if has_length(train_dataloader):
+            print("[进入条件分支] 数据加载器有明确长度（has_length=True）")
             len_dataloader = len(train_dataloader)
+            print(f"[数据加载器长度] len_dataloader = {len_dataloader} 个批次")
+
+            # 计算每个epoch的参数更新次数
             num_update_steps_per_epoch = len_dataloader // args.gradient_accumulation_steps
+            print(f"[计算每epoch更新步数] num_update_steps_per_epoch = {len_dataloader} // {args.gradient_accumulation_steps} = {num_update_steps_per_epoch} (整除部分)")
+
             num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
+            print(f"[修正更新步数] 确保至少1步: num_update_steps_per_epoch = {num_update_steps_per_epoch}")
+
             num_examples = self.num_examples(train_dataloader)
+            print(f"[统计样本数] num_examples = {num_examples} 个样本")
+
+            # 如果用户设置了最大训练步数
             if args.max_steps > 0:
+                print(f"[进入max_steps分支] args.max_steps = {args.max_steps} > 0")
                 max_steps = args.max_steps
+                print(f"[直接使用max_steps] max_steps = {max_steps}")
+
+                # 计算总训练轮数（向上取整）
                 num_train_epochs = args.max_steps // num_update_steps_per_epoch + int(
                     args.max_steps % num_update_steps_per_epoch > 0
                 )
-                # May be slightly incorrect if the last batch in the training dataloader has a smaller size but it's
-                # the best we can do.
+                print(f"[计算训练轮数] num_train_epochs = {args.max_steps} // {num_update_steps_per_epoch} + {int(args.max_steps % num_update_steps_per_epoch > 0)} = {num_train_epochs}")
+
+                # 计算总训练样本数（近似值）
                 num_train_samples = args.max_steps * total_train_batch_size
+                print(f"[计算总样本数] num_train_samples = {args.max_steps} * {total_train_batch_size} = {num_train_samples} 个样本")
+
+                # 如果启用了token统计
                 if args.include_tokens_per_second:
+                    print("[进入token统计分支] include_tokens_per_second=True")
                     num_train_tokens = (
                         self.num_tokens(train_dataloader, args.max_steps) * args.gradient_accumulation_steps
                     )
+                    print(f"[计算总token数] num_train_tokens = {num_train_tokens} (已乘梯度累积步数 {args.gradient_accumulation_steps})")
+                else:
+                    print("[跳过token统计] include_tokens_per_second=False")
+
+            # 如果未设置max_steps，使用num_train_epochs计算
             else:
+                print(f"[进入epochs分支] args.max_steps <= 0，使用num_train_epochs={args.num_train_epochs}")
                 max_steps = math.ceil(args.num_train_epochs * num_update_steps_per_epoch)
+                print(f"[计算总训练步数] max_steps = ceil({args.num_train_epochs} * {num_update_steps_per_epoch}) = {max_steps}")
+
                 num_train_epochs = math.ceil(args.num_train_epochs)
+                print(f"[修正训练轮数] num_train_epochs = ceil({args.num_train_epochs}) = {num_train_epochs}")
+
                 num_train_samples = self.num_examples(train_dataloader) * args.num_train_epochs
+                print(f"[计算总样本数] num_train_samples = {self.num_examples(train_dataloader)} * {args.num_train_epochs} = {num_train_samples}")
+
                 if args.include_tokens_per_second:
+                    print("[进入token统计分支] include_tokens_per_second=True")
                     num_train_tokens = self.num_tokens(train_dataloader) * args.num_train_epochs
-        elif args.max_steps > 0:  # Rely on max_steps when dataloader does not have a working size
+                    print(f"[计算总token数] num_train_tokens = {self.num_tokens(train_dataloader)} * {args.num_train_epochs} = {num_train_tokens}")
+                else:
+                    print("[跳过token统计] include_tokens_per_second=False")
+
+    # def ok1():
+        # 当数据加载器无法确定长度时（如流式数据），必须依赖 max_steps 控制训练步数
+        elif args.max_steps > 0:  
+            # 直接使用用户设置的 max_steps 作为总训练步数
             max_steps = args.max_steps
-            # Setting a very large number of epochs so we go as many times as necessary over the iterator.
+            print(f"[设置max_steps] max_steps = {max_steps}")
+
+            # 将训练轮数设为极大值（sys.maxsize），强制按迭代次数而非轮数执行
             num_train_epochs = sys.maxsize
+            print(f"[虚拟轮数] num_train_epochs = {num_train_epochs} (sys.maxsize)")
+
+            # 每个epoch的更新步数 = max_steps（整个训练视为一个无限长的epoch）
             num_update_steps_per_epoch = max_steps
+            print(f"[更新步数/epoch] num_update_steps_per_epoch = {max_steps}")
+
+            # 计算总样本数 = 总批次大小 * 总训练步数
             num_examples = total_train_batch_size * args.max_steps
+            print(f"[总样本数] num_examples = {total_train_batch_size} * {args.max_steps} = {num_examples}")
+
+            # 等效写法，与 num_examples 相同
             num_train_samples = args.max_steps * total_train_batch_size
+            print(f"[总训练样本数] num_train_samples = {num_train_samples}")
+
+            # 如果启用token统计
             if args.include_tokens_per_second:
+                print("[计算总token数] include_tokens_per_second=True")
+                # 总token数 = 每步token数 * 梯度累积步数
                 num_train_tokens = self.num_tokens(train_dataloader, args.max_steps) * args.gradient_accumulation_steps
+                print(f"num_train_tokens = {num_train_tokens}")
         else:
+            # 如果未设置 max_steps，直接抛出错误
             raise ValueError(
                 "args.max_steps must be set to a positive value if dataloader does not have a length, was"
                 f" {args.max_steps}"
             )
 
+
+    # def ok2():
+        # 检查是否启用了数值溢出/下溢调试模式
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
+            # 如果使用多 GPU (DataParallel)，抛出错误（当前不支持）
             if self.args.n_gpu > 1:
-                # nn.DataParallel(model) replicates the model, creating new variables and module
-                # references registered here no longer work on other gpus, breaking the module
                 raise ValueError(
                     "Currently --debug underflow_overflow is not supported under DP. Please use DDP"
                     " (torchrun or torch.distributed.launch (deprecated))."
                 )
             else:
+                # 单 GPU 时初始化溢出/下溢调试钩子
                 debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
+                print("[调试模式] 已启用数值溢出/下溢监控")
 
-        delay_optimizer_creation = is_sagemaker_mp_enabled() or self.is_fsdp_xla_enabled or self.is_fsdp_enabled
+        # 判断是否需要延迟优化器创建（某些并行策略需先初始化模型）
+        delay_optimizer_creation = (
+            is_sagemaker_mp_enabled() or 
+            self.is_fsdp_xla_enabled or 
+            self.is_fsdp_enabled
+        )
+        print(f"[优化器延迟创建] delay_optimizer_creation={delay_optimizer_creation}")
 
-        # We need to reset the scheduler, as its parameters may be different on subsequent calls
+        # 如果已创建过学习率调度器，需要重置（参数可能已变化）
         if self._created_lr_scheduler:
             self.lr_scheduler = None
             self._created_lr_scheduler = False
+            print("[重置学习率调度器] 因参数变化需重新初始化")
 
+        # DeepSpeed 特殊初始化
         if self.is_deepspeed_enabled:
+            print("[DeepSpeed] 初始化优化器和调度器")
             self.optimizer, self.lr_scheduler = deepspeed_init(self, num_training_steps=max_steps)
 
+        # 非延迟条件下创建优化器和调度器
         if not delay_optimizer_creation:
+            print("[创建优化器] 标准模式")
             self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
+        # 初始化训练状态，包含可序列化的回调状态
         self.state = TrainerState(
             stateful_callbacks=[
-                cb for cb in self.callback_handler.callbacks + [self.control] if isinstance(cb, ExportableState)
+                cb for cb in self.callback_handler.callbacks + [self.control] 
+                if isinstance(cb, ExportableState)
             ]
         )
-        self.state.is_hyper_param_search = trial is not None
-        self.state.train_batch_size = self._train_batch_size
+        print(f"[状态初始化] 注册可导出状态的回调数量: {len(self.state.stateful_callbacks)}")
 
-        # Compute absolute values for logging, eval, and save if given as ratio
+        # 标记是否处于超参数搜索中（如 Optuna）
+        self.state.is_hyper_param_search = trial is not None
+        print(f"[超参搜索] is_hyper_param_search={self.state.is_hyper_param_search}")
+
+        # 记录当前训练批次大小
+        self.state.train_batch_size = self._train_batch_size
+        print(f"[批次大小] train_batch_size={self._train_batch_size}")
+
+    # def ok3():
+        # ---------------------------- 日志/评估/保存步数计算 ----------------------------
+        print("\n===== 计算日志/评估/保存步数 =====")
         if args.logging_steps is not None:
+            print(f"[日志步数] 原始参数: args.logging_steps = {args.logging_steps}")
             if args.logging_steps < 1:
-                self.state.logging_steps = math.ceil(max_steps * args.logging_steps)
+                calculated = math.ceil(max_steps * args.logging_steps)
+                self.state.logging_steps = calculated
+                print(f"  转换为绝对步数: {max_steps} * {args.logging_steps} = {calculated} (向上取整)")
             else:
                 self.state.logging_steps = args.logging_steps
+                print(f"  使用绝对步数: {args.logging_steps}")
+        else:
+            print("[日志步数] 未设置 (args.logging_steps=None)")
+
         if args.eval_steps is not None:
+            print(f"[评估步数] 原始参数: args.eval_steps = {args.eval_steps}")
             if args.eval_steps < 1:
-                self.state.eval_steps = math.ceil(max_steps * args.eval_steps)
+                calculated = math.ceil(max_steps * args.eval_steps)
+                self.state.eval_steps = calculated
+                print(f"  转换为绝对步数: {max_steps} * {args.eval_steps} = {calculated} (向上取整)")
             else:
                 self.state.eval_steps = args.eval_steps
+                print(f"  使用绝对步数: {args.eval_steps}")
+        else:
+            print("[评估步数] 未设置 (args.eval_steps=None)")
+
         if args.save_steps is not None:
+            print(f"[保存步数] 原始参数: args.save_steps = {args.save_steps}")
             if args.save_steps < 1:
-                self.state.save_steps = math.ceil(max_steps * args.save_steps)
+                calculated = math.ceil(max_steps * args.save_steps)
+                self.state.save_steps = calculated
+                print(f"  转换为绝对步数: {max_steps} * {args.save_steps} = {calculated} (向上取整)")
             else:
                 self.state.save_steps = args.save_steps
+                print(f"  使用绝对步数: {args.save_steps}")
+        else:
+            print("[保存步数] 未设置 (args.save_steps=None)")
 
-        # Activate gradient checkpointing if needed
+        # ---------------------------- 梯度检查点激活 ----------------------------
+        print("\n===== 梯度检查点配置 =====")
         if args.gradient_checkpointing:
-            self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=args.gradient_checkpointing_kwargs)
+            print(f"[梯度检查点] 已启用，参数: {args.gradient_checkpointing_kwargs}")
+            try:
+                self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=args.gradient_checkpointing_kwargs)
+                print("  成功挂载梯度检查点")
+            except Exception as e:
+                print(f"  错误: 梯度检查点启用失败 - {str(e)}")
+        else:
+            print("[梯度检查点] 未启用")
 
+        # ---------------------------- 模型包装与加速器准备 ----------------------------
+        print("\n===== 模型包装与加速器准备 =====")
+        print(f"[模型包装前] 模型类型: {type(self.model_wrapped)}")
         model = self._wrap_model(self.model_wrapped)
+        print(f"[模型包装后] 新模型类型: {type(model)}, 原始模型引用: {model is self.model}")
 
-        # as the model is wrapped, don't use `accelerator.prepare`
-        # this is for unhandled cases such as
-        # FSDP-XLA, SageMaker MP/DP, DataParallel, IPEX
+        # 判断是否需要调用 accelerator.prepare()
         use_accelerator_prepare = True if model is self.model else False
+        print(f"[加速器准备] use_accelerator_prepare={use_accelerator_prepare} (仅当模型未重新包装时需准备)")
 
+        # FSDP 特殊情况处理：当自动寻找批次大小时，解除子模型包装
         if use_accelerator_prepare and self.is_fsdp_enabled:
-            # In case of auto_find_batch_size=True
-            # Remove FSDP wrapping from sub-models.
+            print("[FSDP 调整] 检测到自动批次大小调整(auto_find_batch_size=True)，解除子模型FSDP包装")
             self.model = unwrap_model(self.model, recursive=True)
+            print(f"  解除后模型类型: {type(self.model)}")
 
+        # ---------------------------- 延迟优化器创建处理 ----------------------------
+        print("\n===== 优化器与调度器初始化 =====")
         if delay_optimizer_creation:
+            print(f"[延迟创建] delay_optimizer_creation={delay_optimizer_creation}，开始处理...")
             if use_accelerator_prepare:
-                # configure fsdp plugin for qlora if any
-                self._fsdp_qlora_plugin_updates()
-                if self.accelerator.mixed_precision != "fp8":
-                    self.model = self.accelerator.prepare(self.model)
-            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
+                print("  需要调用 accelerator.prepare()")
+                if hasattr(self, '_fsdp_qlora_plugin_updates'):
+                    print("  配置 FSDP + QLoRA 插件...")
+                    self._fsdp_qlora_plugin_updates()
+                    print("  FSDP QLoRA 插件更新完成")
+                else:
+                    print("  无需 FSDP QLoRA 插件配置")
 
+                if self.accelerator.mixed_precision != "fp8":
+                    print(f"  当前混合精度模式: {self.accelerator.mixed_precision}，准备模型...")
+                    self.model = self.accelerator.prepare(self.model)
+                    print(f"  加速器准备完成，模型类型: {type(self.model)}")
+                else:
+                    print("  FP8 混合精度模式，跳过自动 prepare()")
+            else:
+                print("  无需调用 accelerator.prepare()")
+
+            print("  创建优化器和学习率调度器...")
+            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
+            print(f"  优化器类型: {type(self.optimizer)}, 调度器类型: {type(self.lr_scheduler)}")
+
+
+
+    # def ok5():
+        # print("\n==== 进入 ok5 函数 ====")
+        
         # prepare using `accelerator` prepare
         if use_accelerator_prepare:
+            print(f"[条件判断] use_accelerator_prepare={use_accelerator_prepare}，进入加速器准备流程")
             self.model.train()
+            print(f"[模型状态] 设置模型为训练模式: {type(self.model).__name__}")
+            
             if hasattr(self.lr_scheduler, "step"):
+                print(f"[调度器检测] lr_scheduler 存在 step 方法: {type(self.lr_scheduler).__name__}")
                 if self.use_apex:
+                    print("[混合精度] 检测到使用 APEX，仅封装模型")
                     model = self.accelerator.prepare(self.model)
+                    print(f"[加速器封装] APEX 模式下模型已封装: {type(model).__name__}")
                 else:
+                    print("[标准封装] 同时封装模型和优化器")
                     model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
+                    print(f"[加速器封装] 模型类型: {type(model).__name__}, 优化器类型: {type(self.optimizer).__name__}")
             else:
-                # to handle cases wherein we pass "DummyScheduler" such as when it is specified in DeepSpeed config.
+                print(f"[调度器异常] lr_scheduler 无 step 方法，可能是 DeepSpeed 的 DummyScheduler")
                 model, self.optimizer, self.lr_scheduler = self.accelerator.prepare(
                     self.model, self.optimizer, self.lr_scheduler
                 )
+                print(f"[虚拟对象处理] 模型: {type(model)}, 优化器: {type(self.optimizer)}, 调度器: {type(self.lr_scheduler)}")
         elif self.args.optim in [OptimizerNames.LOMO, OptimizerNames.ADALOMO]:
-            # In this case we are in DDP + LOMO, which should be supported
+            print(f"[特殊优化器] 使用 {self.args.optim}，仅封装优化器")
             self.optimizer = self.accelerator.prepare(self.optimizer)
+            print(f"[优化器封装] 类型: {type(self.optimizer).__name__}")
+        else:
+            print("[警告] 未进入任何加速器准备分支")
 
         if self.is_fsdp_enabled:
+            print(f"[FSDP 启用] 设置 model_wrapped: {self.is_fsdp_enabled}")
             self.model = self.model_wrapped = model
+            print(f"[模型更新] model 和 model_wrapped 已指向封装后的对象: {type(self.model)}")
+        
+        print("\n==== 模型封装后状态 ====")
+        print(f"self.model 类型: {type(self.model)}")
+        print(f"self.model_wrapped 类型: {type(self.model_wrapped) if hasattr(self, 'model_wrapped') else '未定义'}")
 
-        # for the rest of this function `model` is the outside model, whether it was wrapped or not
-        if model is not self.model:
-            self.model_wrapped = model
-
-        # backward compatibility
+        # DeepSpeed 兼容性处理
         if self.is_deepspeed_enabled:
+            print("\n[DeepSpeed] 设置 deepspeed 属性为封装后的模型")
             self.deepspeed = self.model_wrapped
+            print(f"self.deepspeed 类型: {type(self.deepspeed).__name__}")
 
-        # ckpt loading
+        # 检查点加载逻辑
+        print("\n==== 检查点加载 ====")
         if resume_from_checkpoint is not None:
+            print(f"[检查点路径] {resume_from_checkpoint}")
             if self.is_deepspeed_enabled:
+                print(f"[DeepSpeed 加载] 调用 deepspeed_load_checkpoint (strict={not _is_peft_model(self.model)})")
                 deepspeed_load_checkpoint(
                     self.model_wrapped, resume_from_checkpoint, load_module_strict=not _is_peft_model(self.model)
                 )
             elif is_sagemaker_mp_enabled() or self.is_fsdp_enabled:
+                print(f"[SageMaker/FSDP 加载] 调用 _load_from_checkpoint")
                 self._load_from_checkpoint(resume_from_checkpoint, self.model_wrapped)
+            else:
+                print("[警告] 无可用检查点加载方法")
+        else:
+            print("[信息] 未提供 resume_from_checkpoint，跳过加载")
 
-        # Check if saved optimizer or scheduler states exist
+        # 优化器和调度器加载
+        print("\n==== 优化器/调度器加载 ====")
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
+        print(f"优化器状态已加载: {hasattr(self, 'optimizer') and self.optimizer is not None}")
+        print(f"调度器状态已加载: {hasattr(self, 'lr_scheduler') and self.lr_scheduler is not None}")
 
-        # important: at this point:
-        # self.model         is the Transformers Model
-        # self.model_wrapped is DDP(Transformers Model), Deepspeed(Transformers Model),
-        # FSDP(Transformers Model), Dynamo Optimized Module(Transformers Model) etc.
-
-        # Train!
-        logger.info("***** Running training *****")
+        # 训练信息日志
+        print("\n==== 训练配置信息 ====")
+        logger.info("*****Running training*****")
         logger.info(f"  Num examples = {num_examples:,}")
         logger.info(f"  Num Epochs = {num_train_epochs:,}")
         logger.info(f"  Instantaneous batch size per device = {self.args.per_device_train_batch_size:,}")
+        
         if self.args.per_device_train_batch_size != self._train_batch_size:
+            print(f"[批次调整] DataParallel 模式下批次调整为 {self._train_batch_size}")
             logger.info(f"  Training with DataParallel so batch size has been adjusted to: {self._train_batch_size:,}")
+        
         logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size:,}")
         logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
         logger.info(f"  Total optimization steps = {max_steps:,}")
-        logger.info(f"  Number of trainable parameters = {get_model_param_count(model, trainable_only=True):,}")
+        logger.info(f"  Number of trainable parameters = {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
+        
 
+
+
+    # def ok7():
+        # print("\n==== 进入 ok7 函数（训练状态初始化） ====")
+        
+        # 初始化训练状态变量
         self.state.epoch = 0
         start_time = time.time()
         epochs_trained = 0
         steps_trained_in_current_epoch = 0
         steps_trained_progress_bar = None
+        print(f"[状态初始化] epoch={self.state.epoch}, start_time={start_time:.2f}")
+        print(f"[恢复训练] 初始值 epochs_trained={epochs_trained}, steps_trained_in_current_epoch={steps_trained_in_current_epoch}")
 
-        # Check if continuing training from a checkpoint
-        if resume_from_checkpoint is not None and os.path.isfile(
-            os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME)
-        ):
-            self.state = TrainerState.load_from_json(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
+        # 检查是否从检查点恢复
+        checkpoint_state_path = os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME) if resume_from_checkpoint else None
+        print(f"\n[检查点检测] 检查路径: {checkpoint_state_path or 'None'}")
+        
+        if resume_from_checkpoint is not None and os.path.isfile(checkpoint_state_path):
+            print("[检查点恢复] 加载训练器状态...")
+            self.state = TrainerState.load_from_json(checkpoint_state_path)
+            print(f"[状态加载] 恢复全局步数 global_step={self.state.global_step}, epoch={self.state.epoch}")
+
+            # 参数一致性检查
+            print("[参数校验] 对比训练参数与检查点参数")
             self.compare_trainer_and_checkpoint_args(self.args, self.state)
+            
+            # 加载回调状态
+            print("[回调状态] 恢复回调处理器状态")
             self._load_callback_state()
+
+            # 计算跳过的训练步骤
             epochs_trained = int(self.state.global_step // num_update_steps_per_epoch)
+            print(f"[进度跳过] 已训练 epoch 数: {epochs_trained} (global_step={self.state.global_step}, steps_per_epoch={num_update_steps_per_epoch})")
+            
             if not args.ignore_data_skip:
-                steps_trained_in_current_epoch = self.state.global_step % (num_update_steps_per_epoch)
+                steps_trained_in_current_epoch = self.state.global_step % num_update_steps_per_epoch
                 steps_trained_in_current_epoch *= args.gradient_accumulation_steps
+                print(f"[批次跳过] 当前 epoch 已训练批次: {steps_trained_in_current_epoch} (梯度累积步数={args.gradient_accumulation_steps})")
             else:
                 steps_trained_in_current_epoch = 0
+                print("[数据跳过] 忽略已训练数据（args.ignore_data_skip=True）")
 
+            # 日志输出
             logger.info("  Continuing training from checkpoint, will skip to saved global_step")
             logger.info(f"  Continuing training from epoch {epochs_trained}")
             logger.info(f"  Continuing training from global step {self.state.global_step}")
             if not args.ignore_data_skip:
-                logger.info(
-                    f"  Will skip the first {epochs_trained} epochs then the first"
-                    f" {steps_trained_in_current_epoch} batches in the first epoch."
-                )
+                logger.info(f"  Will skip first {epochs_trained} epochs and {steps_trained_in_current_epoch} batches")
+        else:
+            print("[检查点恢复] 无有效检查点路径，从头开始训练")
 
-        # Update the references
+        # 更新回调处理器引用
+        print("\n==== 回调处理器更新 ====")
         self.callback_handler.model = self.model
         self.callback_handler.optimizer = self.optimizer
         self.callback_handler.lr_scheduler = self.lr_scheduler
         self.callback_handler.train_dataloader = train_dataloader
+        print(f"[引用绑定] 模型类型: {type(self.model).__name__}")
+        print(f"[引用绑定] 优化器类型: {type(self.optimizer).__name__ if self.optimizer else 'None'}")
+
+        # 超参数搜索相关
+        print("\n==== 超参数搜索处理 ====")
         if self.hp_name is not None and self._trial is not None:
-            # use self._trial because the SigOpt/Optuna hpo only call `_hp_search_setup(trial)` instead of passing trial
-            # parameter to Train when using DDP.
-            self.state.trial_name = self.hp_name(self._trial)
-        if trial is not None:
-            assignments = trial.assignments if self.hp_search_backend == HPSearchBackend.SIGOPT else trial
-            self.state.trial_params = hp_params(assignments)
+            trial_name = self.hp_name(self._trial)
+            self.state.trial_name = trial_name
+            print(f"[超参数试用] 试用名称: {trial_name} (后端={self.hp_search_backend})")
+            
+            if trial is not None:
+                if self.hp_search_backend == HPSearchBackend.SIGOPT:
+                    assignments = trial.assignments
+                else:
+                    assignments = trial
+                self.state.trial_params = hp_params(assignments)
+                print(f"[超参数] 试用参数: {self.state.trial_params}")
+            else:
+                self.state.trial_params = None
+                print("[超参数] 无试用参数")
         else:
-            self.state.trial_params = None
-        # This should be the same if the state has been saved but in case the training arguments changed, it's safer
-        # to set this after the load.
+            print("[超参数] 未启用超参数搜索")
+
+        # 训练状态配置
+        print("\n==== 最终训练状态配置 ====")
         self.state.max_steps = max_steps
         self.state.num_train_epochs = num_train_epochs
         self.state.is_local_process_zero = self.is_local_process_zero()
         self.state.is_world_process_zero = self.is_world_process_zero()
+        print(f"[训练限制] max_steps={max_steps}, num_train_epochs={num_train_epochs}")
+        print(f"[进程角色] is_local_process_zero={self.state.is_local_process_zero}, is_world_process_zero={self.state.is_world_process_zero}")
 
-        # tr_loss is a tensor to avoid synchronization of TPUs through .item()
+        # 初始化损失张量
+        print("\n==== 损失初始化 ====")
         tr_loss = torch.tensor(0.0).to(args.device)
+        print(f"[损失设备] tr_loss 设备: {tr_loss.device} (dtype={tr_loss.dtype})")
+        
+        # print("\n==== 函数 ok7 执行结束 ====\n")
+
         # _total_loss_scalar is updated everytime .item() has to be called on tr_loss and stores the sum of all losses
+    # def ok8():
+        # print("\n==== 进入 ok8 函数（训练循环核心） ====")
+        
+        # 初始化训练指标
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged = self.state.global_step
+        print(f"[指标初始化] 总损失={self._total_loss_scalar}, 最后记录步={self._globalstep_last_logged}")
+        
         model.zero_grad()
+        print("[梯度操作] 模型梯度已清零")
+        
         grad_norm: Optional[float] = None
+        
+        # 训练开始回调
+        print("\n==== 回调: 训练开始 ====")
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
-
+        print(f"回调控制状态更新: {self.control}")
+        
+        # 初始评估
         if args.eval_on_start:
+            print("\n[初始评估] 根据 args.eval_on_start 执行评估")
             self._evaluate(trial, ignore_keys_for_eval, skip_scheduler=True)
+        else:
+            print("\n[初始评估] 跳过评估 (args.eval_on_start=False)")
 
+        # Epoch 循环
+        print(f"\n==== 开始 Epoch 循环 ({epochs_trained}-{num_train_epochs-1}) ====")
         for epoch in range(epochs_trained, num_train_epochs):
+            print(f"\n\n=== Epoch {epoch}/{num_train_epochs-1} ===")
             epoch_dataloader = train_dataloader
+            
+            # 分布式数据加载器设置
             if hasattr(epoch_dataloader, "set_epoch"):
+                print(f"[分布式] 设置 dataloader epoch 为 {epoch}")
                 epoch_dataloader.set_epoch(epoch)
-
-            # Reset the past mems state at the beginning of each epoch if necessary.
+            else:
+                print(f"[数据加载器] 类型 {type(epoch_dataloader).__name__} 无 set_epoch 方法")
+            
+            # 历史状态重置
             if args.past_index >= 0:
+                print(f"[状态管理] 重置 past 状态 (past_index={args.past_index})")
                 self._past = None
-
+            
+            # 计算本 epoch 总步数
             steps_in_epoch = (
                 len(epoch_dataloader)
                 if len_dataloader is not None
                 else args.max_steps * args.gradient_accumulation_steps
             )
+            print(f"[步骤统计] 本 epoch 总步数={steps_in_epoch} (数据加载器长度={len(epoch_dataloader) if len_dataloader else '自动计算'})")
+            
+            # Epoch 开始回调
+            print("\n[回调] 触发 on_epoch_begin")
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
-
+            
+            # 检查点 RNG 状态恢复
             if epoch == epochs_trained and resume_from_checkpoint is not None and steps_trained_in_current_epoch == 0:
+                print("\n[随机状态] 从检查点恢复 RNG 状态")
                 self._load_rng_state(resume_from_checkpoint)
-
+            
+            # 跳过已训练批次
             rng_to_sync = False
             steps_skipped = 0
             if steps_trained_in_current_epoch > 0:
+                print(f"\n[数据跳过] 跳过前 {steps_trained_in_current_epoch} 个已训练批次")
                 epoch_dataloader = skip_first_batches(epoch_dataloader, steps_trained_in_current_epoch)
                 steps_skipped = steps_trained_in_current_epoch
                 steps_trained_in_current_epoch = 0
                 rng_to_sync = True
-
+                print(f"实际跳过的批次: {steps_skipped}, 新数据加载器类型: {type(epoch_dataloader).__name__}")
+            
+            # 训练步循环准备
             step = -1
             epoch_iterator = iter(epoch_dataloader)
-            # We chunkify the epoch iterator into gradient accumulation steps `n` batches
+            print(f"\n[迭代器] 创建数据迭代器 ({type(epoch_iterator).__name__})")
+            
+            # 梯度累积配置
             remainder = num_examples % args.gradient_accumulation_steps
             if remainder == 0:
                 remainder = args.gradient_accumulation_steps
             update_step = -1
             total_updates = steps_in_epoch // args.gradient_accumulation_steps + 1
+            print(f"\n[梯度累积] 总更新次数={total_updates} (每 {args.gradient_accumulation_steps} 步更新, 余数处理={remainder})")
+      
+
+        # def ok9():
+        #     print("\n==== 进入 ok9 函数（梯度累积核心） ====")
+            
+            # 总更新次数循环
+            print(f"[梯度累积] 总更新次数: {total_updates}")
             for _ in range(total_updates):
                 update_step += 1
+                print(f"\n--- 更新步骤 {update_step}/{total_updates} ---")
+                
+                # 确定当前更新步的批次数量
                 num_batches = args.gradient_accumulation_steps if update_step != (total_updates - 1) else remainder
+                print(f"当前更新步的累积批次数: {num_batches} (剩余批次处理: {remainder})")
+                
+                # 获取批次样本
                 batch_samples, num_items_in_batch = self.get_batch_samples(epoch_iterator, num_batches)
+                print(f"获取批次数据 | 样本数: {num_items_in_batch}, 批次类型: {type(batch_samples).__name__}")
+                
+                # 遍历当前累积批次
                 for i, inputs in enumerate(batch_samples):
                     step += 1
+                    print(f"\n  -- 批次 {i+1}/{num_batches} (全局步 {step}) --")
+                    
+                    # 梯度同步条件判断
                     do_sync_step = (step + 1) % args.gradient_accumulation_steps == 0 or (step + 1) == steps_in_epoch
-                    # Since we perform prefetching, we need to manually set sync_gradients
+                    print(f"是否同步梯度: {do_sync_step} (累积步阈值={args.gradient_accumulation_steps}, 总步={steps_in_epoch})")
+                    
+                    # 设置梯度同步状态
                     if not do_sync_step:
+                        print("  [梯度同步] 禁用跨设备梯度同步")
                         self.accelerator.gradient_state._set_sync_gradients(False)
                     else:
+                        print("  [梯度同步] 启用跨设备梯度同步")
                         self.accelerator.gradient_state._set_sync_gradients(True)
-
+                    
+                    # 输入令牌统计
                     if self.args.include_num_input_tokens_seen:
+                        print("  [输入统计] 追踪输入令牌数量")
                         main_input_name = getattr(self.model, "main_input_name", "input_ids")
                         if main_input_name not in inputs:
-                            logger.warning(
-                                "Tried to track the number of tokens seen, however the current model is "
-                                "not configured properly to know what item is the input. To fix this, add "
-                                "a `main_input_name` attribute to the model class you are using."
-                            )
+                            logger.warning("模型未定义 main_input_name，无法统计输入令牌")
+                            print("  [警告] 输入字典中未找到 main_input_name 字段")
                         else:
                             input_tokens = inputs[main_input_name].numel()
-                            input_tokens = torch.tensor(input_tokens, device=self.args.device, dtype=torch.int64)
-                            self.state.num_input_tokens_seen += (
-                                self.accelerator.gather(input_tokens).sum().cpu().item()
-                            )
+                            print(f"  [输入统计] 当前批次令牌数: {input_tokens}")
+                            input_tokens_tensor = torch.tensor(input_tokens, device=self.args.device, dtype=torch.int64)
+                            gathered_tokens = self.accelerator.gather(input_tokens_tensor).sum().cpu().item()
+                            self.state.num_input_tokens_seen += gathered_tokens
+                            print(f"  [全局统计] 累计输入令牌: {self.state.num_input_tokens_seen}")
+                    
+                    # 恢复 RNG 状态
                     if rng_to_sync:
+                        print("  [随机状态] 从检查点恢复 RNG 状态")
                         self._load_rng_state(resume_from_checkpoint)
                         rng_to_sync = False
-
-                    # Skip past any already trained steps if resuming training
+                    
+                    # 跳过已训练步骤
                     if steps_trained_in_current_epoch > 0:
                         steps_trained_in_current_epoch -= 1
+                        print(f"  [恢复跳过] 剩余待跳步数: {steps_trained_in_current_epoch}")
                         if steps_trained_progress_bar is not None:
                             steps_trained_progress_bar.update(1)
+                            print("  [进度条] 更新跳步进度条")
                         if steps_trained_in_current_epoch == 0:
+                            print("  [恢复完成] 所有待跳步骤已完成")
                             self._load_rng_state(resume_from_checkpoint)
                         continue
                     elif steps_trained_progress_bar is not None:
+                        print("  [进度条] 关闭跳步进度条")
                         steps_trained_progress_bar.close()
                         steps_trained_progress_bar = None
-
-                    if step % args.gradient_accumulation_steps == 0:
-                        self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
-
-                    # We explicitly want to avoid relying on `accelerator.accumulate` for generation training
+                    
+                    # # 触发步骤开始回调
+                    # if step % args.gradient_accumulation_steps == 0:
+                    #     print("  [回调] 触发 on_step_begin")
+                    #     self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
+                    #                     elif steps_trained_progress_bar is not None:
+                    #     steps_trained_progress_bar.close()
+                    #     steps_trained_progress_bar = None
+                    # if step % args.gradient_accumulation_steps == 0:
+                    #     self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
+                    # # We explicitly want to avoid relying on `accelerator.accumulate` for generation training
                     context = (
                         functools.partial(self.accelerator.no_sync, model=model)
                         if i != len(batch_samples) - 1
                         and self.accelerator.distributed_type != DistributedType.DEEPSPEED
                         else contextlib.nullcontext
-                    )
-                    with context():
-                        tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                    )  
+                    # # 前向传播上下文管理
+                    # context = (
+                    #     self.accelerator.no_sync(model) 
+                    #     if (i + 1) < num_batches and not do_sync_step 
+                    #     else contextlib.nullcontext()
+                    # )
+                    print(f"  [上下文] 使用 {'no_sync' if context != contextlib.nullcontext() else '默认'} 模式")
+                    
 
+                # def ok10():
+                #     print("\n==== 进入 ok10 函数（训练步骤核心） ====")
+                    
+                    # 前向传播与损失计算
+                    with context():
+                        print("[上下文] 进入训练步骤上下文 (梯度累积模式)")
+                        tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                        print(f"计算得到步骤损失: {tr_loss_step.item():.4f} (设备: {tr_loss_step.device})")
+                    
+                    # NaN/Inf 损失处理
                     if (
-                        args.logging_nan_inf_filter
+                        args.logging_nan_inf_filter 
                         and not is_torch_xla_available()
                         and (torch.isnan(tr_loss_step) or torch.isinf(tr_loss_step))
                     ):
-                        # if loss is nan or inf simply add the average of previous logged losses
-                        tr_loss = tr_loss + tr_loss / (1 + self.state.global_step - self._globalstep_last_logged)
+                        print("\n[异常损失处理] 检测到 NaN/Inf 损失值")
+                        avg_loss = tr_loss / (1 + self.state.global_step - self._globalstep_last_logged)
+                        tr_loss = tr_loss + avg_loss
+                        print(f"使用历史平均损失替代: {avg_loss.item():.4f} → 总损失={tr_loss.item():.4f}")
                     else:
+                        print("\n[损失累加] 正常更新总损失")
                         if tr_loss.device != tr_loss_step.device:
-                            raise ValueError(
-                                f"Calculated loss must be on the original device: {tr_loss.device} but device in use is {tr_loss_step.device}"
-                            )
+                            print(f"!! 设备不匹配 !! 总损失设备: {tr_loss.device}, 步骤损失设备: {tr_loss_step.device}")
+                            raise ValueError("损失设备不一致错误")
                         tr_loss = tr_loss + tr_loss_step
-
-                    self.current_flos += float(self.floating_point_ops(inputs))
-
+                        print(f"更新后总损失: {tr_loss.item():.4f}")
+                    
+                    # 浮点运算统计
+                    current_flops = self.floating_point_ops(inputs)
+                    self.current_flos += float(current_flops)
+                    print(f"\n[计算量统计] 本步骤 FLOPs: {current_flops} → 累计 FLOPs: {self.current_flos}")
+                    
+                    # 梯度同步与裁剪
                     if do_sync_step:
-                        # Since we perform prefetching, we need to manually set sync_gradients to True
+                        print("\n[梯度同步] 强制启用跨设备梯度同步")
                         self.accelerator.gradient_state._set_sync_gradients(True)
-
-                        # Gradient clipping
+                        
                         if args.max_grad_norm is not None and args.max_grad_norm > 0:
-                            # deepspeed does its own clipping
-
+                            print(f"[梯度裁剪] 应用最大范数 {args.max_grad_norm}")
+                            
+                            # 不同后端的裁剪方式
                             if is_sagemaker_mp_enabled() and args.fp16:
+                                print("  - 使用 SageMaker FP16 优化器的 clip_master_grads 方法")
                                 _grad_norm = self.optimizer.clip_master_grads(args.max_grad_norm)
                             elif self.use_apex:
-                                # Revert to normal clipping otherwise, handling Apex or full precision
+                                print("  - 使用 Apex 的混合精度梯度裁剪")
                                 _grad_norm = nn.utils.clip_grad_norm_(
-                                    amp.master_params(self.optimizer),
-                                    args.max_grad_norm,
+                                    amp.master_params(self.optimizer), 
+                                    args.max_grad_norm
                                 )
                             else:
+                                print("  - 使用标准梯度裁剪")
                                 _grad_norm = self.accelerator.clip_grad_norm_(
-                                    model.parameters(),
-                                    args.max_grad_norm,
+                                    model.parameters(), 
+                                    args.max_grad_norm
                                 )
-
+                            
+                            # 梯度范数获取逻辑
                             if (
                                 is_accelerate_available()
                                 and self.accelerator.distributed_type == DistributedType.DEEPSPEED
                             ):
+                                print("  - 从 DeepSpeed 引擎获取全局梯度范数")
                                 grad_norm = model.get_global_grad_norm()
-                                # In some cases the grad norm may not return a float
                                 if hasattr(grad_norm, "item"):
                                     grad_norm = grad_norm.item()
                             else:
                                 grad_norm = _grad_norm
-
+                                
+                            print(f"裁剪后梯度范数: {grad_norm:.4f}")
+                    
+                        # 优化器步骤前回调
+                        print("\n[回调] 触发 on_pre_optimizer_step")
                         self.control = self.callback_handler.on_pre_optimizer_step(args, self.state, self.control)
-
+                        
+                        # 执行优化器步骤
                         self.optimizer.step()
+                        print("[优化器] 完成参数更新")
+                        
+                        # 优化器步骤后回调
+                        print("[回调] 触发 on_post_optimizer_step")
+                        self.control = self.callback_handler.on_post_optimizer_step(args, self.state, self.control)
 
-                        self.control = self.callback_handler.on_optimizer_step(args, self.state, self.control)
 
+                        # 优化器步骤状态检测
                         optimizer_was_run = not self.accelerator.optimizer_step_was_skipped
+                        print(f"[优化器状态] 步骤是否实际执行: {optimizer_was_run} (跳过状态={not optimizer_was_run})")
+                        
+                        # 学习率调度逻辑
                         if optimizer_was_run:
-                            # Delay optimizer scheduling until metrics are generated
+                            print("\n[学习率调度] 准备更新学习率")
                             if not isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                                prev_lr = self.lr_scheduler.get_last_lr()[0] if self.lr_scheduler else "N/A"
                                 self.lr_scheduler.step()
-
+                                current_lr = self.lr_scheduler.get_last_lr()[0] if self.lr_scheduler else "N/A"
+                                print(f"  非自适应调度器更新 | 学习率变化: {prev_lr} → {current_lr}")
+                            else:
+                                print("  检测到 ReduceLROnPlateau 调度器，等待指标更新")
+                        else:
+                            print("\n[学习率调度] 优化器未执行步骤，跳过调度")
+                        
+                        # 梯度清零
+                        print("\n[梯度管理] 执行 model.zero_grad()")
                         model.zero_grad()
+                        
+                        # 全局状态更新
+                        print("\n==== 训练状态更新 ====")
+                        print(f"  原全局步数: {self.state.global_step}")
                         self.state.global_step += 1
-                        self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
+                        print(f"  新全局步数: {self.state.global_step}")
+                        
+                        epoch_progress = epoch + (step + 1 + steps_skipped) / steps_in_epoch
+                        print(f"  Epoch 进度计算: {epoch} + ({step}+1+{steps_skipped})/{steps_in_epoch} = {epoch_progress:.4f}")
+                        self.state.epoch = epoch_progress
+                        
+                        # 步骤结束回调
+                        print("\n[回调系统] 触发 on_step_end")
                         self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+                        print(f"  回调控制状态更新: {self.control}")
+                        
+                        # 日志/保存/评估检查
+                        print("\n[系统检查] 执行可能的后处理操作")
                         self._maybe_log_save_evaluate(
                             tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time
                         )
+
+
                     else:
+                            # 子步骤结束回调
+                        print("[回调系统] 触发 on_substep_end")
+                        prev_control = self.control  # 记录回调前状态
                         self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
+                        print(f"  回调后控制状态变更: {prev_control} → {self.control}")
+                        # self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
 
                     # PyTorch/XLA relies on the data loader to insert the mark_step for
                     # each step. Since we are breaking the loop early, we need to manually
                     # insert the mark_step here.
+
                     if self.control.should_epoch_stop or self.control.should_training_stop:
+                        print("\n[中断处理] 收到停止信号")
+                        
+                        # PyTorch/XLA 特殊处理
                         if is_torch_xla_available():
+                            print("  - 检测到 PyTorch/XLA 环境，执行 xm.mark_step()")
                             xm.mark_step()
-                        break
+                            break
+                        else:
+                            print("  - 非 XLA 环境，无需插入 mark_step")
+                    # if self.control.should_epoch_stop or self.control.should_training_stop:
+                    #     if is_torch_xla_available():
+                    #         xm.mark_step()
+                    #     break
                 # We also need to break out of the nested loop
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     if is_torch_xla_available():
                         xm.mark_step()
                     break
+        # def ok13():
+        #     print("\n==== 进入 ok13 函数（训练循环终止检查） ====")
+            
+            # 空数据迭代器检测
             if step < 0:
-                logger.warning(
-                    "There seems not to be a single sample in your epoch_iterator, stopping training at step"
-                    f" {self.state.global_step}! This is expected if you're using an IterableDataset and set"
-                    f" num_steps ({max_steps}) higher than the number of available samples."
-                )
+                print(f"\n!! [数据异常] step={step}，可能原因:")
+                print(f"  - 使用 IterableDataset 时设置的 max_steps({max_steps}) 超过实际样本数")
+                print(f"  - 数据加载器返回空批次 (当前全局步数: {self.state.global_step})")
+                logger.warning("检测到空数据迭代器，将强制停止训练")
                 self.control.should_training_stop = True
-
+                print("  训练终止标志已设置: self.control.should_training_stop=True")
+            
+            # Epoch 结束回调
+            print("\n[回调系统] 触发 on_epoch_end")
+            prev_control = self.control
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
-            self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time)
-
+            print(f"  回调状态变更: {prev_control} → {self.control}")
+            
+            # 最终日志/保存/评估
+            print("\n[最终处理] 执行日志/保存/评估检查")
+            self._maybe_log_save_evaluate(
+                tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time
+            )
+            print("  后处理操作完成")
+            
+            # TPU 调试指标
             if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
+                print("\n[TPU 调试] 检查 XLA 性能指标")
                 if is_torch_xla_available():
-                    # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
+                    print("  生成 XLA 性能报告 (met.metrics_report())")
                     xm.master_print(met.metrics_report())
                 else:
-                    logger.warning(
-                        "You enabled PyTorch/XLA debug metrics but you don't have a TPU "
-                        "configured. Check your training configuration if this is unexpected."
-                    )
+                    print("  !! 警告: 启用了 TPU 调试但未检测到 XLA 环境")
+            
+            # 训练终止判断
+            print(f"\n[终止检查] 训练停止标志: {self.control.should_training_stop}")
             if self.control.should_training_stop:
+                print("!! 训练终止条件满足，跳出循环 !!")
+                if step < 0:
+                    print("  终止原因: 数据迭代器异常")
+                else:
+                    print("  终止原因: 回调系统触发停止 (如早停)")
                 break
+            else:
+                print("  训练继续进入下一个 epoch")
 
+            # print("\n==== 函数 ok13 执行结束 ====\n")
+
+
+
+        
+        # 清理历史状态
         if args.past_index and hasattr(self, "_past"):
-            # Clean the state at the end of training
+            print(f"\n[状态清理] 删除 _past 属性 (past_index={args.past_index})")
             delattr(self, "_past")
-
+        else:
+            print("\n[状态清理] 无需清理 _past 属性")
+        
+        # 训练完成提示
         logger.info("\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n")
+        print("✅ 训练流程已完成")
+        
+        # 加载最佳模型逻辑
         if args.load_best_model_at_end and self.state.best_model_checkpoint is not None:
-            # Wait for everyone to get here so we are sure the model has been saved by process 0.
+            print("\n==== 最佳模型加载 ====")
+            print(f"准备加载最佳模型检查点: {self.state.best_model_checkpoint}")
+            
+            # 多设备同步
+            sync_method = ""
             if is_torch_xla_available():
+                sync_method = "TPU xm.rendezvous"
                 xm.rendezvous("load_best_model_at_end")
             elif args.parallel_mode == ParallelMode.DISTRIBUTED:
+                sync_method = "PyTorch dist.barrier"
                 dist.barrier()
             elif is_sagemaker_mp_enabled():
+                sync_method = "SageMaker smp.barrier"
                 smp.barrier()
-
+            
+            if sync_method:
+                print(f"已完成设备同步: {sync_method}")
+            
+            print("开始加载最佳模型权重...")
             self._load_best_model()
-
-        # add remaining tr_loss
+            print(f"最佳模型已加载，当前模型哈希: {hash_model_parameters(self.model)}")
+        else:
+            print("\n[模型保留] 未启用 load_best_model_at_end 或无最佳检查点")
+        
+        # 损失计算
+        print("\n==== 最终指标计算 ====")
         self._total_loss_scalar += tr_loss.item()
-        effective_global_step = max(self.state.global_step, 0.001)  # Avoid ZeroDivisionError
+        print(f"累计总损失标量: {self._total_loss_scalar:.4f} (当前 tr_loss={tr_loss.item():.4f})")
+        
+        effective_global_step = max(self.state.global_step, 0.001)
+        if self.state.global_step <= 0:
+            print(f"⚠️ 全局步数异常 ({self.state.global_step})，使用最小值 0.001 避免除零错误")
         train_loss = self._total_loss_scalar / effective_global_step
-
+        print(f"最终平均训练损失: {train_loss:.4f} (总损失/{effective_global_step})")
+        
+        # 生成性能指标
         metrics = speed_metrics(
             "train",
             start_time,
@@ -2691,15 +3147,29 @@ class Trainer:
             num_steps=self.state.max_steps,
             num_tokens=num_train_tokens,
         )
+        print("\n[性能指标] 速度统计:")
+        print(f"  - 训练时长: {metrics['train_runtime']:.2f}s")
+        print(f"  - 样本数: {num_train_samples} | Steps: {self.state.max_steps}")
+        if num_train_tokens:
+            print(f"  - Token数: {num_train_tokens} (每秒 {metrics['train_tokens_per_second']:.0f} tokens)")
+        
+        # FLOS 处理
         self.store_flos()
         metrics["total_flos"] = self.state.total_flos
-        metrics["train_loss"] = train_loss
-
+        print(f"记录总FLOS: {self.state.total_flos} (存储状态: {hasattr(self, 'stored_flos')})")
+        
+        # 内存跟踪
+        print("\n[资源监控] 停止内存跟踪")
         self.is_in_train = False
-
         self._memory_tracker.stop_and_update_metrics(metrics)
-
+        print(f"内存峰值: {metrics['peak_memory_mb']} MB")
+        
+        # 最终日志记录
+        print("\n[最终日志] 写入所有指标")
         self.log(metrics)
+        print("指标字段: " + ", ".join(metrics.keys()))
+
+
 
         run_dir = self._get_output_dir(trial)
         checkpoints_sorted = self._sorted_checkpoints(use_mtime=False, output_dir=run_dir)

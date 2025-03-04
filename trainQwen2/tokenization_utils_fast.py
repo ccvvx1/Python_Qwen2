@@ -117,7 +117,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         print(f"[PARAM] from_slow: {from_slow}")
 
         print("Q:为什么要加这些字段？字段从什么位置过来？")
-        print("A:加一些特定词汇，字段经过token的from_pretrained函数读取json配置文件获取到")
+        print("A:加一些特定词汇，字段经过token的from_pretrained函数读取tokenizer_config.json配置文件获取到")
         import sys, os
         print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
         added_tokens_decoder = kwargs.pop("added_tokens_decoder", {})
@@ -398,7 +398,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         """
         Size of the full vocabulary with the added tokens.
         """
-        print("加密中=========")
+        # print("加密中=========")
         return self._tokenizer.get_vocab_size(with_added_tokens=True)
 
     @property
@@ -406,7 +406,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         """
         `tokenizers.implementations.BaseTokenizer`: The Rust tokenizer used as a backend.
         """
-        print("加密中=========")
+        # print("加密中=========")
         return self._tokenizer
 
     @property
@@ -500,25 +500,25 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         Returns:
             `int` or `List[int]`: The token id or list of token ids.
         """
-        print("加密中=========")
+        # print("加密中=========")
         if isinstance(tokens, str):
             return self._convert_token_to_id_with_added_voc(tokens)
 
         return [self._convert_token_to_id_with_added_voc(token) for token in tokens]
 
     def _convert_token_to_id_with_added_voc(self, token: str) -> int:
-        # print("加密中=========")
+        # # print("加密中=========")
         index = self._tokenizer.token_to_id(token)
         if index is None:
             return self.unk_token_id
         return index
 
     def _convert_id_to_token(self, index: int) -> Optional[str]:
-        # print("加密中=========")
+        # # print("加密中=========")
         return self._tokenizer.id_to_token(int(index))
 
     def _add_tokens(self, new_tokens: List[Union[str, AddedToken]], special_tokens=False) -> int:
-        # print("加密中=========")
+        # # print("加密中=========")
         if special_tokens:
             return self._tokenizer.add_special_tokens(new_tokens)
 
@@ -610,7 +610,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
                 The side on which the model should have padding applied. Should be selected between ['right', 'left'].
                 Default value is picked from the class attribute of the same name.
         """
-        print("加密中=========")
+        # print("加密中=========")
         _truncation = self._tokenizer.truncation
         _padding = self._tokenizer.padding
         # Set truncation and padding on the backend tokenizer
