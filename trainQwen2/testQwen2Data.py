@@ -152,7 +152,7 @@ trainer = SFTTrainer(
     train_dataset=formatted_dataset["train"],
     eval_dataset=formatted_dataset["test"],
     data_collator=data_collator,
-    processing_class=LlamaTokenizerFast,
+    # processing_class=LlamaTokenizerFast,
     peft_config=peft_config
 )
 

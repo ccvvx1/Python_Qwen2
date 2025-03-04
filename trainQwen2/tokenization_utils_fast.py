@@ -535,7 +535,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             tokens.append(self._tokenizer.id_to_token(index))
         return tokens
 
-    def tokenize1(self, text: str, pair: Optional[str] = None, add_special_tokens: bool = False, **kwargs) -> List[str]:
+    def tokenize(self, text: str, pair: Optional[str] = None, add_special_tokens: bool = False, **kwargs) -> List[str]:
         print("生成口令")
         return self.encode_plus(text=text, text_pair=pair, add_special_tokens=add_special_tokens, **kwargs).tokens()
 
@@ -707,7 +707,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             self._eventual_warn_about_too_long_sequence(input_ids, max_length, verbose)
         return BatchEncoding(sanitized_tokens, sanitized_encodings, tensor_type=return_tensors)
 
-    def _encode_plus1(
+    def _encode_plus(
         self,
         text: Union[TextInput, PreTokenizedInput],
         text_pair: Optional[Union[TextInput, PreTokenizedInput]] = None,

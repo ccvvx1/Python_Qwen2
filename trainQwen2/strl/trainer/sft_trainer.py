@@ -38,6 +38,7 @@ from transformers import (
     TrainingArguments,
     is_wandb_available,
 )
+from llama.tokenization_llama_fast import LlamaTokenizerFast
 from tokenization_utils_base import PreTrainedTokenizerBase
 from trainer import Trainer
 from transformers.trainer_callback import TrainerCallback
@@ -204,7 +205,7 @@ class SFTTrainer(Trainer):
         if processing_class is None:
             model_path = model.config._name_or_path if hasattr(model, 'config') else 'Unknown'
             print(f"自动加载分词器 | 模型路径: {model_path}")
-            processing_class = AutoTokenizer.from_pretrained(model_path)
+            processing_class = LlamaTokenizerFast.from_pretrained(model_path)
             if processing_class.pad_token is None:
                 processing_class.pad_token = processing_class.eos_token
                 print(f"⚠️ 设置pad_token为eos_token | pad_token_id: {processing_class.pad_token_id}")
@@ -546,8 +547,8 @@ class SFTTrainer(Trainer):
             
             def tokenize(example, processing_class, dataset_text_field):
                 print(f"正在处理样本ID：{example.get('id', 'N/A')}", " 分词处理的字段名称：", dataset_text_field) if bPrintMoreKv else None
-                # print("使用的函数：", processing_class) example[dataset_text_field]
-                result = processing_class()
+                # print("使用的函数：", processing_class) 
+                result = processing_class(example[dataset_text_field])
                 if bPrintMoreKv:
                     print(f"分词结果长度：{len(result['input_ids'])}")
                     print(f"示例输入IDs：{result['input_ids'][:10]}...")
