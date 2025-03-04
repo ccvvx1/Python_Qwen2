@@ -810,23 +810,53 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
         return batch
 
     def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
-        # 处理不同类型输入数据的填充和转换
+    # def ok():
+        """处理不同格式输入数据的填充转换，并输出详细处理日志"""
+        # 数据预处理阶段跟踪
         print("\n=== 开始处理批次数据 ===")
         print(f"收到样本数量：{len(examples)}")
         print(f"首样本类型：{type(examples[0])}")
+        print(f"当前填充对齐倍数：{self.pad_to_multiple_of or '无'}")
+        
+        try:  # 类型安全检测
+            sample_repr = str({k: type(v) for k, v in examples[0].items()}) if isinstance(examples[0], Mapping) \
+                        else f"List[TokenIds] length={len(examples[0])}"
+            print(f"样本结构示意：{sample_repr}")
+        except Exception as e:
+            print(f"样本解析异常：{str(e)}")
 
-        # 处理字典类型输入
+        # 分支处理不同数据结构
         if isinstance(examples[0], Mapping):
+            print("\n--- 字典格式处理流程 ---")
             print("检测到字典格式输入，执行标准填充")
+            print(f"可用字段列表：{examples[0].keys()}")
+            
+            # # 执行填充前检查
+            # if "attention_mask" in examples[0]:
+            #     orig_mask_shape = examples[0]["attention_mask"].shape
+            #     print(f"原始attention_mask维度：{orig_mask_shape}")
+
             batch = pad_without_fast_tokenizer_warning(
                 self.tokenizer, 
                 examples, 
                 return_tensors="pt",
                 pad_to_multiple_of=self.pad_to_multiple_of
             )
-            print(f"填充后批次结构：{ {k: v.shape for k, v in batch.items()} }")
+            
+            # 填充后分析
+            print("\n[填充结果] 各字段张量维度：")
+            for k, v in batch.items():
+                print(f"  {k.ljust(20)}: {str(v.shape).ljust(15)} dtype={v.dtype}")
+            
+            # 检查填充有效性
+            # max_len = max(len(seq) for seq in examples)
+            # if batch["input_ids"].shape[1] % self.pad_to_multiple_of != 0:
+            #     print(f"!! 警告：填充后长度{batch['input_ids'].shape[1]} 未对齐倍数{self.pad_to_multiple_of}")
         else:
+            print("\n--- 列表格式处理流程 ---")
             print("检测到列表格式输入，执行简易填充")
+            print(f"首样本长度：{len(examples[0])} | 末样本长度：{len(examples[-1])}")
+            
             batch = {
                 "input_ids": _torch_collate_batch(
                     examples, 
@@ -834,47 +864,104 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
                     pad_to_multiple_of=self.pad_to_multiple_of
                 )
             }
-            print(f"填充后input_ids形状：{batch['input_ids'].shape}")
+            print(f"\n[填充结果] input_ids形状：{batch['input_ids'].shape} dtype={batch['input_ids'].dtype}")
+            
+            # 长度分布统计
+            lengths = [len(seq) for seq in examples]
+            print(f"原始序列长度分布：min={min(lengths)}, max={max(lengths)}, mean={sum(lengths)/len(lengths):.1f}")
 
-        # 处理特殊标记掩码
+        # 特殊标记处理分析
+        print("\n--- 特殊标记检测 ---")
         special_tokens_mask = batch.pop("special_tokens_mask", None)
+        
         if special_tokens_mask is not None:
-            print(f"移除特殊标记掩码，形状：{special_tokens_mask.shape}")
+            print(f"移除特殊标记掩码 | 形状：{special_tokens_mask.shape}")
+            print(f"掩码值统计：0数量={(special_tokens_mask == 0).sum()}, 1数量={(special_tokens_mask == 1).sum()}")
+            
+            # 验证移除影响
+            print("当前批次剩余字段：" + ", ".join(batch.keys()))
         else:
-            print("未检测到特殊标记掩码")
+            print("未检测到特殊标记掩码字段")
+            if "attention_mask" in batch:
+                print("使用attention_mask进行后续处理")
+        
+        # print("\n=== 数据处理完成 ===")
+        # return batch
 
-        # 数据遮罩处理
+
+    # def ok():
+        """执行MLM遮罩或标准标签生成，并输出全流程调试信息"""
+        # 遮罩处理入口
+        separator = "\n" + "="*40
         if self.mlm:
-            print("\n=== 执行MLM遮罩 ===")
-            print("遮罩前input_ids示例：", batch["input_ids"][0, :8])
-            batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
+            print(f"{separator}\n=== MLM遮罩处理流程 ===")
+            print(f"输入形状: {batch['input_ids'].shape} | 设备: {batch['input_ids'].device}")
+            print("原始input_ids示例:", batch["input_ids"][0, :8].cpu().tolist())
+            
+            # 执行遮罩前统计
+            seq_length = batch["input_ids"].shape[1]
+            total_tokens = batch["input_ids"].numel()
+            print(f"序列长度: {seq_length} | 总token数: {total_tokens}")
+
+            # 执行遮罩操作
+            masked_inputs, mlm_labels = self.torch_mask_tokens(
                 batch["input_ids"], 
                 special_tokens_mask=special_tokens_mask
             )
-            print("遮罩后input_ids示例：", batch["input_ids"][0, :8])
-            print("生成labels示例：", batch["labels"][0, :8])
-        else:
-            print("\n=== 非遮罩模式 ===")
-            # 克隆输入作为标签基值
-            labels = batch["input_ids"].clone()
-            print("原始标签示例：", labels[0, :8])
             
-            # 处理填充符标签
+            # 遮罩后分析
+            print("\n--- 遮罩效果分析 ---")
+            print("遮罩后input_ids示例:", masked_inputs[0, :8].cpu().tolist())
+            print("生成的labels示例:   ", mlm_labels[0, :8].cpu().tolist())
+            
+            # 统计遮罩类型
+            mask_positions = (mlm_labels != -100)
+            total_masked = mask_positions.sum().item()
+            random_mask_rate = (mlm_labels[mask_positions] != batch["input_ids"][mask_positions]).sum().item() / total_masked
+            
+            print(f"\n遮罩统计:")
+            print(f"总遮罩token数: {total_masked} (占{(total_masked/total_tokens)*100:.1f}%)")
+            print(f"随机替换比例: {random_mask_rate*100:.1f}% [MASK:{total_masked - int(random_mask_rate*total_masked)}]")
+            
+            # 更新批次数据
+            batch["input_ids"] = masked_inputs
+            batch["labels"] = mlm_labels
+        else:
+            print(f"{separator}\n=== 非MLM标签生成 ===")
+            # 克隆原始输入
+            labels = batch["input_ids"].clone()
+            print("原始标签示例:", labels[0, :8].cpu().tolist())
+            
+            # 填充符处理
             if self.tokenizer.pad_token_id is not None:
-                pad_mask = labels == self.tokenizer.pad_token_id
-                print(f"检测到填充符({self.tokenizer.pad_token_id})，数量：{pad_mask.sum().item()}")
+                pad_id = self.tokenizer.pad_token_id
+                pad_mask = labels == pad_id
+                pad_count = pad_mask.sum().item()
+                print(f"\n--- 填充符处理(pad_id={pad_id}) ---")
+                print(f"检测到填充符数量: {pad_count} (占{(pad_count/labels.numel())*100:.1f}%)")
+                
+                # 执行掩码
                 labels[pad_mask] = -100
-                print("处理后的标签示例：", labels[0, :8])
-                print(f"填充位置标记数：{(labels == -100).sum().item()}")
+                print("处理后的标签示例:", labels[0, :8].cpu().tolist())
+                
+                # 有效性验证
+                invalid_count = (labels == pad_id).sum().item()
+                assert invalid_count == 0, f"填充符未完全处理: 剩余{invalid_count}"
             else:
-                print("警告：分词器未定义填充符，跳过标签处理")
+                print("\n!! 警告: 分词器未定义pad_token_id，跳过填充符掩码")
+                print("当前标签中的特殊值统计:", torch.unique(labels, return_counts=True))
             
             # 记录标签信息
             batch["labels"] = labels
-            print(f"标签张量形状：{labels.shape}")
-            print(f"有效标签数：{(labels != -100).sum().item()}/{labels.nelement()}")
+            print("\n--- 标签统计 ---")
+            print(f"标签张量形状: {labels.shape}")
+            valid_labels = (labels != -100).sum().item()
+            print(f"有效标签数: {valid_labels} (占{(valid_labels/labels.numel())*100:.1f}%)")
+            print(f"无效标签(-100)数: {labels.numel() - valid_labels}")
 
-        print("=== 批次处理完成 ===")
+        print(f"\n=== 处理完成 ===")
+        # return batch
+
         return batch
 
 
