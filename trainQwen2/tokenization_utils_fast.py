@@ -416,41 +416,66 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         verbose: bool = True,
     ) -> Tuple[Dict[str, Any], List[EncodingFast]]:
         """
-        Convert the encoding representation (from low-level HuggingFace tokenizer output) to a python Dict and a list
-        of encodings, take care of building a batch from overflowing tokens.
-
-        Overflowing tokens are converted to additional examples (like batches) so the output values of the dict are
-        lists (overflows) of lists (tokens).
-
-        Output shape: (overflows, sequence length)
+        Convert the encoding representation to python Dict and list of encodings.
+        添加详细打印信息跟踪编码转换流程
         """
-        print("进行文字加密")
-        if return_token_type_ids is None:
-            return_token_type_ids = "token_type_ids" in self.model_input_names
-        if return_attention_mask is None:
-            return_attention_mask = "attention_mask" in self.model_input_names
+        print("\n=== 开始编码转换 ===")
+        print(f"传入参数：return_overflowing_tokens={return_overflowing_tokens}, return_offsets_mapping={return_offsets_mapping}")
 
-        if return_overflowing_tokens and encoding.overflowing is not None:
+        # 参数初始化验证
+        return_token_type_ids = return_token_type_ids if return_token_type_ids is not None else "token_type_ids" in self.model_input_names
+        return_attention_mask = return_attention_mask if return_attention_mask is not None else "attention_mask" in self.model_input_names
+        print(f"自动设置参数：token_type_ids={return_token_type_ids}, attention_mask={return_attention_mask}")
+
+        # 处理溢出token
+        overflow_status = "检测到溢出" if encoding.overflowing else "无溢出"
+        print(f"\n溢出检测：{overflow_status}")
+        if return_overflowing_tokens and encoding.overflowing:
             encodings = [encoding] + encoding.overflowing
+            print(f"当前总编码数：{len(encodings)} (原始+{len(encoding.overflowing)}溢出)")
         else:
             encodings = [encoding]
+            print("未启用溢出token返回或无可溢出编码")
 
+        # 构建编码字典
+        print("\n构建编码字典：")
         encoding_dict = defaultdict(list)
-        for e in encodings:
+        for idx, e in enumerate(encodings):
+            print(f"\n处理第 {idx+1}/{len(encodings)} 个编码：")
+            
+            # 核心字段
             encoding_dict["input_ids"].append(e.ids)
-
+            print(f"添加input_ids（长度：{len(e.ids)}）")
+            
+            # 可选字段
             if return_token_type_ids:
                 encoding_dict["token_type_ids"].append(e.type_ids)
+                print(f"添加token_type_ids（长度：{len(e.type_ids)}）")
+            
             if return_attention_mask:
                 encoding_dict["attention_mask"].append(e.attention_mask)
+                print(f"添加attention_mask（长度：{len(e.attention_mask)}）")
+            
             if return_special_tokens_mask:
                 encoding_dict["special_tokens_mask"].append(e.special_tokens_mask)
+                print(f"添加special_tokens_mask（长度：{len(e.special_tokens_mask)}）")
+            
             if return_offsets_mapping:
                 encoding_dict["offset_mapping"].append(e.offsets)
+                print(f"添加offset_mapping（首项：{e.offsets[0] if e.offsets else None}）")
+            
             if return_length:
                 encoding_dict["length"].append(len(e.ids))
+                print(f"添加length值：{len(e.ids)}")
 
+        # 最终输出验证
+        print("\n转换完成，输出结构：")
+        print(f"生成字段列表：{list(encoding_dict.keys())}")
+        print(f"总编码数：{len(encodings)}")
+        print(f"首编码input_ids长度：{len(encodings[0].ids) if encodings else 0}")
+        
         return encoding_dict, encodings
+
 
     def convert_tokens_to_ids(self, tokens: Union[str, Iterable[str]]) -> Union[int, List[int]]:
         """
@@ -676,7 +701,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         print("\n开始批量编码...")
         print(f"参数详情: add_special_tokens={add_special_tokens}, is_split_into_words={is_split_into_words}")
         print(f"样本数量: {len(batch_text_or_text_pairs)}")
-        print("首样本示例:", batch_text_or_text_pairs[0][:50] + "...")  # 打印首样本前50字符
+        print("首样本示例:", batch_text_or_text_pairs[0][:50] + "...", "样板长度：", len(batch_text_or_text_pairs[0]))  # 打印首样本前50字符
         
         # print("使用的_tokenizer类：", self._tokenizer)
         encodings = self._tokenizer.encode_batch(
@@ -685,7 +710,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             is_pretokenized=is_split_into_words,
         )
         print(f"√ 编码完成，共获得{len(encodings)}个编码结果")
-        print("首编码结构示例:", type(encodings[0]), "长度:", len(encodings[0]))
+        print("首编码结构示例:", type(encodings[0]), "长度:", len(encodings[0]), "前面50个内容：", encodings[0])
 
         # 编码结果转换
         print("\n开始编码转换...")
