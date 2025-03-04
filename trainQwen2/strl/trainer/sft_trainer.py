@@ -267,6 +267,8 @@ class SFTTrainer(Trainer):
         else:
             print(f"使用自定义数据整理器 | 类型: {type(data_collator).__name__}")
 
+        self._metrics = defaultdict(list)
+
         # 父类初始化兼容性处理
         print("\n[Phase 8] 父类初始化准备".ljust(40, '-'))
         super_init_kwargs = {}

@@ -4275,8 +4275,8 @@ class Trainer:
             
             print("\n[反向传播] 执行加速器反向传播")
             self.accelerator.backward(loss, **kwargs)
-            grad_norm = self._get_grad_norm()
-            print(f"  当前梯度范数: {grad_norm:.4f} | 设备: {loss.device}")
+            # grad_norm = self._get_grad_norm()
+            # print(f"  当前梯度范数: {grad_norm:.4f} | 设备: {loss.device}")
         
         print("\n=== 训练步骤完成 ===" + "\n" + "="*60)
         return loss.detach()
@@ -4327,6 +4327,9 @@ class Trainer:
             decoded_input = self.tokenizer.decode(inputs["input_ids"][1])
             print("需要输入的内容 1：",decoded_input)  # 输出: "I love programming in Python!" , skip_special_tokens=True
             outputs = model(**inputs)
+            # result = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            # print("输出的结果：", result)
         except Exception as e:
             print("\n!! 前向传播异常 !! 输入结构:")
             print({k: type(v) for k, v in inputs.items()})
