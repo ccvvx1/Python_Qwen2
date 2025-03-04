@@ -118,6 +118,8 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
 
         print("Q:为什么要加这些字段？字段从什么位置过来？")
         print("A:加一些特定词汇，字段经过token的from_pretrained函数读取json配置文件获取到")
+        import sys, os
+        print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
         added_tokens_decoder = kwargs.pop("added_tokens_decoder", {})
         print(f"[PARAM] added_tokens_decoder条目数: {len(added_tokens_decoder)}","具体内容：", added_tokens_decoder)
 
@@ -143,6 +145,8 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
                 print("  尝试加载tokenizers库序列化文件...")
                 print("Q:从系统tokenizers函数已经可以获取到配置文件的add_specail_tokens字段，为什么还得在token的from_pretrained函数提前获取add_special_tokens内容？")
                 print("A:因为这里的tokenizers是从tokenizer.json读取数据，而传进来的add_special_tokens数据来自tokenizr_config.json，来源不一样，最后得把两者合并")
+                import sys, os
+                print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
                 fast_tokenizer = TokenizerFast.from_file(fast_tokenizer_file)
                 print(f"  加载成功！分词器类型: {type(fast_tokenizer).__name__}")
                 print(f"  初始词汇量: {fast_tokenizer.get_vocab_size()}", "分解器内容：", fast_tokenizer)
@@ -301,6 +305,8 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         # 合并特殊Token
         print("Q：新增的加密token和解密token是一样的？")
         print("A：是的，从代码上可以看到是一样的")
+        import sys, os
+        print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
         encoder = list(self.added_tokens_encoder.keys()) + [str(token) for token in tokens_to_add]
         print(f"[合并] 当前编码器总Token数: {len(encoder)}")
         

@@ -2066,7 +2066,11 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
         # We instantiate fast tokenizers based on a slow tokenizer if we don't have access to the tokenizer.json
         # file or if `from_slow` is set to True.
         print("Q:token的from_pretrained的主要作用是什么？")
-        print("A:从token的配置json文件读取配置，形成数据传给初始化的代码，例如读取配置文件的add_special_token的数据然后传给token初始化的代码进行处理")
+        print("A:从token的配置tokenizer_config.json文件读取配置，形成数据传给初始化的代码，例如读取配置文件的add_special_token的数据然后传给token初始化的代码进行处理")
+        print("Q:读取的add_special_token填到字符串格式就可以？")
+        print("A:需要处理成tokenizers这个库可以识别的结构体类型，一般是add_token结构体")
+        import sys
+        print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
         from_slow = kwargs.get("from_slow", False)
         gguf_file = kwargs.get("gguf_file", None)
         has_tokenizer_file = resolved_vocab_files.get("tokenizer_file", None) is not None

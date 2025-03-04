@@ -192,7 +192,9 @@ class LlamaTokenizerFast(PreTrainedTokenizerFast):
         print("Q:关于新增的add_token只需要补充到token的列表里就可以？")
         print("A:不是的，例如开始标志的bos_token_id或其他想特殊处理的id需要写到全局变量里")
         print("Q:写到全局就可以？")
-        print("A:一般还得用到系统tokenizers的特殊函数进一步处理这些id，例如tokenizers的add_single_pair的函数")
+        print("A:一般还得用到系统tokenizers的特殊函数进一步处理这些id，例如tokenizers的add_single_pair的函数，除了id这个数值，还得全局保存字符串")
+        import sys, os
+        print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
         bos_token_id = self.bos_token_id
         print(f"[DEBUG] BOS 配置检查 | add_bos_token={self.add_bos_token}, bos_token='{bos}', bos_token_id={bos_token_id}")
         
@@ -233,6 +235,8 @@ class LlamaTokenizerFast(PreTrainedTokenizerFast):
         
         print("Q:单句和句对有什么作用？")
         print("A:为单句（single）和句对（pair）输入自动添加模型所需的特殊符号（如 [CLS]、[SEP]）")
+        import sys, os
+        print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
         # 更新后处理器
         self._tokenizer.post_processor = processors.TemplateProcessing(
             single=single, pair=pair, special_tokens=special_tokens
