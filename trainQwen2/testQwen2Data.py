@@ -76,6 +76,7 @@ print("通过配置构建标签生成需要的函数：")
 
 from llama.tokenization_llama_fast import LlamaTokenizerFast
 
+print("Q:token.from_pretrained会路由到哪个地方？\nA:会路由到/content/Python_Qwen2/trainQwen2/tokenization_utils_base.py的1800行\nFile \"/content/Python_Qwen2/trainQwen2/tokenization_utils_base.py\", line 1800")
 tokenizer = LlamaTokenizerFast.from_pretrained(model_id, trust_remote_code=True)
 
 # Add custom tokens

@@ -116,8 +116,10 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         from_slow = kwargs.pop("from_slow", False)
         print(f"[PARAM] from_slow: {from_slow}")
 
+        print("Q:为什么要加这些字段？字段从什么位置过来？")
+        print("A:加一些特定词汇，字段经过token的from_pretrained函数读取json配置文件获取到")
         added_tokens_decoder = kwargs.pop("added_tokens_decoder", {})
-        print(f"[PARAM] added_tokens_decoder条目数: {len(added_tokens_decoder)}")
+        print(f"[PARAM] added_tokens_decoder条目数: {len(added_tokens_decoder)}","具体内容：", added_tokens_decoder)
 
         # 处理前缀空格参数
         self.add_prefix_space = kwargs.get("add_prefix_space", False)
@@ -139,6 +141,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             print(f"\n[BRANCH 2] 从文件加载: {fast_tokenizer_file}")
             try:
                 print("  尝试加载tokenizers库序列化文件...")
+                # todo: print("Q:从系统tokenizers函数已经可以获取到配置文件的add_specail_tokens字段，为什么还得在token的from_pretrained函数提前获取add_special_tokens内容？")
                 fast_tokenizer = TokenizerFast.from_file(fast_tokenizer_file)
                 print(f"  加载成功！分词器类型: {type(fast_tokenizer).__name__}")
                 print(f"  初始词汇量: {fast_tokenizer.get_vocab_size()}")
