@@ -141,10 +141,11 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             print(f"\n[BRANCH 2] 从文件加载: {fast_tokenizer_file}")
             try:
                 print("  尝试加载tokenizers库序列化文件...")
-                # todo: print("Q:从系统tokenizers函数已经可以获取到配置文件的add_specail_tokens字段，为什么还得在token的from_pretrained函数提前获取add_special_tokens内容？")
+                print("Q:从系统tokenizers函数已经可以获取到配置文件的add_specail_tokens字段，为什么还得在token的from_pretrained函数提前获取add_special_tokens内容？")
+                print("A:因为这里的tokenizers是从tokenizer.json读取数据，而传进来的add_special_tokens数据来自tokenizr_config.json，来源不一样，最后得把两者合并")
                 fast_tokenizer = TokenizerFast.from_file(fast_tokenizer_file)
                 print(f"  加载成功！分词器类型: {type(fast_tokenizer).__name__}")
-                print(f"  初始词汇量: {fast_tokenizer.get_vocab_size()}")
+                print(f"  初始词汇量: {fast_tokenizer.get_vocab_size()}", "分解器内容：", fast_tokenizer)
             except Exception as e:
                 print(f"[ERROR] 文件加载失败: {str(e)}")
                 raise
@@ -298,6 +299,8 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         print(f"[新增] 需要添加的唯一Token数量: {len(tokens_to_add)}")
 
         # 合并特殊Token
+        print("Q：新增的加密token和解密token是一样的？")
+        print("A：是的，从代码上可以看到是一样的")
         encoder = list(self.added_tokens_encoder.keys()) + [str(token) for token in tokens_to_add]
         print(f"[合并] 当前编码器总Token数: {len(encoder)}")
         
@@ -498,18 +501,18 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         return [self._convert_token_to_id_with_added_voc(token) for token in tokens]
 
     def _convert_token_to_id_with_added_voc(self, token: str) -> int:
-        print("加密中=========")
+        # print("加密中=========")
         index = self._tokenizer.token_to_id(token)
         if index is None:
             return self.unk_token_id
         return index
 
     def _convert_id_to_token(self, index: int) -> Optional[str]:
-        print("加密中=========")
+        # print("加密中=========")
         return self._tokenizer.id_to_token(int(index))
 
     def _add_tokens(self, new_tokens: List[Union[str, AddedToken]], special_tokens=False) -> int:
-        print("加密中=========")
+        # print("加密中=========")
         if special_tokens:
             return self._tokenizer.add_special_tokens(new_tokens)
 
@@ -857,7 +860,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         )
         print("\n_batch_encode_plus执行完成，输出包含以下键:", batched_output.keys())
         
-        print("\n加密中=========")  # 原调试信息保留
+        # print("\n加密中=========")  # 原调试信息保留
         
         # 后处理逻辑
         if return_tensors is None and not return_overflowing_tokens:
