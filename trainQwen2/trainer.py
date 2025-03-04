@@ -3170,28 +3170,64 @@ class Trainer:
         print("指标字段: " + ", ".join(metrics.keys()))
 
 
-
+        
+        # 获取输出目录
         run_dir = self._get_output_dir(trial)
+        print(f"[输出目录] 模型保存路径: {run_dir}")
+        
+        # 排序检查点
         checkpoints_sorted = self._sorted_checkpoints(use_mtime=False, output_dir=run_dir)
-
-        # Delete the last checkpoint when save_total_limit=1 if it's different from the best checkpoint and process allowed to save.
+        print(f"[检查点列表] 发现 {len(checkpoints_sorted)} 个检查点")
+        if checkpoints_sorted:
+            print(f"  最新检查点: {checkpoints_sorted[-1]}")
+        
+        # 检查点清理逻辑
+        print("\n==== 检查点清理 ====")
         if self.args.should_save and self.state.best_model_checkpoint is not None and self.args.save_total_limit == 1:
+            print(f"启用单检查点保留模式 (save_total_limit=1)")
+            print(f"最佳模型检查点: {self.state.best_model_checkpoint}")
+            
+            delete_count = 0
             for checkpoint in checkpoints_sorted:
                 if not os.path.samefile(checkpoint, self.state.best_model_checkpoint):
-                    logger.info(f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit")
+                    print(f"  ! 删除非最佳检查点: {checkpoint}")
                     shutil.rmtree(checkpoint, ignore_errors=True)
-
+                    delete_count += 1
+            print(f"共删除 {delete_count} 个旧检查点")
+        else:
+            print("未触发清理条件:")
+            print(f"  - should_save: {self.args.should_save}")
+            print(f"  - best_model_checkpoint exists: {self.state.best_model_checkpoint is not None}")
+            print(f"  - save_total_limit == 1: {self.args.save_total_limit == 1}")
+        
+        # 训练结束回调
+        print("\n[回调系统] 触发 on_train_end")
+        prev_control = self.control
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
-
-        # Wait for the checkpoint to be uploaded.
+        print(f"  控制状态变更: {prev_control} → {self.control}")
+        
+        # 模型上传等待
+        print("\n[模型中心] 等待最后的上传任务完成")
         self._finish_current_push()
-
-        # After training we make sure to retrieve back the original forward pass method
-        # for the embedding layer by removing the forward post hook.
+        print("  所有上传任务已确认完成")
+        
+        # NEFTune 停用
         if self.neftune_noise_alpha is not None:
+            print("\n[NEFTune] 停用噪声注入层")
+            print(f"  原始模型哈希: {hash_model_parameters(self.model)}")
             self._deactivate_neftune(self.model)
-
+            print(f"  处理后模型哈希: {hash_model_parameters(self.model)}")
+        else:
+            print("\n[NEFTune] 未启用噪声注入")
+        
+        # 返回训练结果
+        print("\n==== 最终结果 ====")
+        print(f"全局步数: {self.state.global_step}")
+        print(f"平均训练损失: {train_loss:.4f}")
+        print(f"收集指标数量: {len(metrics)} (包含: {', '.join(metrics.keys())[:50]}...)")
+        
         return TrainOutput(self.state.global_step, train_loss, metrics)
+
 
     def _get_output_dir(self, trial):
         if self.hp_search_backend is not None and trial is not None:
