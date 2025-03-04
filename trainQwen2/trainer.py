@@ -4315,7 +4315,7 @@ class Trainer:
         # 输入数据审计
         print("\n[前向传播] 输入数据结构:")
         for k, v in inputs.items():
-            shape_str = f"shape={v.shape}" if hasattr(v, 'shape') else f"len={len(v)}"
+            shape_str = f"shape={v.shape}" if hasattr(v, 'shape') else f"shape=shape"
             device_str = f"device={v.device}" if hasattr(v, 'device') else 'non-tensor'
             print(f"  {k.ljust(20)}: {str(type(v)).ljust(25)} {shape_str.ljust(15)} {device_str}")
 
