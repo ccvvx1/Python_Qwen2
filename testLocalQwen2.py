@@ -38,7 +38,7 @@ formatted_input = tokenizer.apply_chat_template(messages, tokenize=False,
 
 print("输入内容：", formatted_input)
 inputs = tokenizer(formatted_input, return_tensors="pt")
-outputs = model.generate(**inputs.to(model.device), max_new_tokens=100)
+outputs = model.generate(**inputs.to(model.device), max_new_tokens1=100)
 
 result = tokenizer.decode(outputs[0], skip_special_tokens=True)
 

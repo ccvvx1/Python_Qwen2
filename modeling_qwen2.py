@@ -1078,13 +1078,35 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin):
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
+    # def ok():
+        print("\n[初始化参数处理]")
+        print(f"初始 output_attentions 参数值: {output_attentions}")
+        print(f"从 self.config 读取的 output_attentions 默认值: {self.config.output_attentions}")
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        print(f"最终确定 output_attentions = {output_attentions}")
+
+        print(f"\n初始 output_hidden_states 参数值: {output_hidden_states}")
+        print(f"从 self.config 读取的 output_hidden_states 默认值: {self.config.output_hidden_states}")
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        print(f"最终确定 output_hidden_states = {output_hidden_states}")
 
-        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        print(f"\n初始 return_dict 参数值: {return_dict}")
+        print(f"从 self.config 读取的 use_return_dict 默认值: {self.config.use_return_dict}")
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        print(f"最终确定 return_dict = {return_dict}")
+
+        print("\n[模型前向传播调用]")
+        print("调用 self.model() 参数详情:")
+        print(f"  input_ids.shape = {input_ids.shape if input_ids is not None else 'None'}")
+        print(f"  attention_mask = {attention_mask.shape if attention_mask is not None else 'None'}")
+        print(f"  position_ids = {position_ids.shape if position_ids is not None else 'None'}")
+        print(f"  past_key_values 类型 = {type(past_key_values) if past_key_values is not None else 'None'}")
+        print(f"  inputs_embeds = {inputs_embeds.shape if inputs_embeds is not None else 'None'}")
+        print(f"  use_cache = {use_cache}")
+        print(f"  cache_position = {cache_position}")
+
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -1098,33 +1120,81 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin):
             cache_position=cache_position,
             **kwargs,
         )
-        print("真正输出的形状：", outputs)
-
+        
+        print("\n[模型输出解析]")
+        print(f"outputs 类型: {type(outputs)}")
+        if return_dict:
+            print("输出为字典格式，包含字段:", outputs.keys())
+        else:
+            print("输出为元组格式，长度:", len(outputs))
+        
+        print("\n提取 hidden_states")
         hidden_states = outputs[0]
-        print("第一个隐藏层输出的形状：", hidden_states.shape)
-        # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        print("保存的信息：", logits_to_keep)
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        print("片段信息：", slice_indices)
-        print("隐藏层扩展的形状：", hidden_states[:, slice_indices, :].shape)
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
-        print("输出内容的形状：", logits.shape)
+        print(f"隐藏状态张量形状: {hidden_states.shape} (batch, seq_len, hidden_dim)")
+        print(f"隐藏状态数据类型: {hidden_states.dtype}")
+        print(f"隐藏状态均值/极值: mean={hidden_states.mean().item():.4f}, max={hidden_states.max().item():.4f}")
 
+        print("\n[Logits计算阶段]")
+        print(f"传入的 logits_to_keep 值: {logits_to_keep} (类型: {type(logits_to_keep)})")
+        
+        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+        print(f"生成的切片对象: {slice_indices}")
+        print(f"实际切片范围解析: start={slice_indices.start}, stop={slice_indices.stop}, step={slice_indices.step}")
+
+        print("\n执行隐藏状态切片")
+        sliced_hidden = hidden_states[:, slice_indices, :]
+        print(f"切片后的隐藏状态形状: {sliced_hidden.shape} (batch, kept_tokens, hidden_dim)")
+        print(f"示例切片位置: 取最后{logits_to_keep}个token的隐藏状态" if isinstance(logits_to_keep, int) else "自定义切片规则")
+
+        print("\n通过 lm_head 计算 logits")
+        logits = self.lm_head(sliced_hidden)
+        print(f"Logits张量形状: {logits.shape} (batch, kept_tokens, vocab_size)")
+        print(f"Logits示例值[0, -1, :10]: {logits[0, -1, :10].tolist()}")
+        print(f"Logits数值范围: min={logits.min().item():.4f}, max={logits.max().item():.4f}")
+
+        print("\n[损失计算阶段]")
         loss = None
         if labels is not None:
+            print("检测到 labels 存在，开始计算损失")
+            print(f"Labels张量形状: {labels.shape} (batch, seq_len)")
+            print(f"Labels示例值[0, :10]: {labels[0, :10].tolist()}")
+            
+            # 调试标签与logits对齐情况
+            expected_label_shape = (labels.shape[0], sliced_hidden.shape[1])
+            print(f"预期labels切片后形状: {expected_label_shape}")
+            if labels.shape[1] != sliced_hidden.shape[1]:
+                print("⚠️ 警告: labels长度与logits切片长度不匹配！可能需对齐处理")
+            
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
+            print(f"计算得到的loss值: {loss.item() if loss is not None else 'None'}")
+        else:
+            print("未提供 labels，跳过损失计算")
 
+        print("\n[返回结果构造]")
         if not return_dict:
+            print("以元组格式返回结果")
             output = (logits,) + outputs[1:]
-            return (loss,) + output if loss is not None else output
+            print(f"元组长度: {len(output)}")
+            print(f"第一个元素logits形状: {output[0].shape}")
+            if loss is not None:
+                print("返回带损失的元组")
+                return (loss,) + output
+            else:
+                print("返回无损失元组")
+                return output
+        else:
+            print("以 CausalLMOutputWithPast 对象返回")
+            print("构造返回对象包含字段: loss, logits, past_key_values, hidden_states, attentions")
+            return_dict_obj = CausalLMOutputWithPast(
+                loss=loss,
+                logits=logits,
+                past_key_values=outputs.past_key_values,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+            )
+            print(f"返回对象类型验证: {type(return_dict_obj)}")
+            return return_dict_obj
 
-        return CausalLMOutputWithPast(
-            loss=loss,
-            logits=logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
 
 
 @add_start_docstrings(
