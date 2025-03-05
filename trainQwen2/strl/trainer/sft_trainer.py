@@ -418,22 +418,46 @@ class SFTTrainer(Trainer):
 
     def _enable_gradient_checkpointing(self, model: PreTrainedModel, args: SFTConfig) -> PreTrainedModel:
         """Enables gradient checkpointing for the model."""
+    # def ok123():
+        print("🔧 开始配置梯度检查点与梯度需求设置")
+        
+        # 获取梯度检查点参数配置
         gradient_checkpointing_kwargs = args.gradient_checkpointing_kwargs or {}
+        print(f"📦 梯度检查点参数: {gradient_checkpointing_kwargs} (默认使用空字典)")
+
+        # 确定检查点模式
         use_reentrant = (
-            "use_reentrant" not in gradient_checkpointing_kwargs or gradient_checkpointing_kwargs["use_reentrant"]
+            "use_reentrant" not in gradient_checkpointing_kwargs 
+            or gradient_checkpointing_kwargs["use_reentrant"]
         )
+        print(f"🔍 检查use_reentrant标志: {'未指定' if 'use_reentrant' not in gradient_checkpointing_kwargs else '显式设置'}")
+        print(f"🔄 使用{'可重入(reentrant)' if use_reentrant else '不可重入(non-reentrant)'}检查点模式")
 
         if use_reentrant:
+            print("\n⚠️ 检测到需要启用输入梯度保留(reentrant模式)")
+            
             if hasattr(model, "enable_input_require_grads"):
+                print("✅ 检测到模型内置enable_input_require_grads方法")
+                print("⚡ 正在启用自动输入梯度需求...")
                 model.enable_input_require_grads()
+                print("🟢 自动梯度需求配置完成")
             else:
-
+                print("⛔ 模型未实现enable_input_require_grads方法，启用备用方案")
+                
                 def make_inputs_require_grad(module, input, output):
+                    print(f"🎯 手动设置梯度需求 - 模块: {module._get_name()}")
                     output.requires_grad_(True)
+                    
+                print("🪝 注册输入嵌入层前向钩子...")
+                embed_layer = model.get_input_embeddings()
+                print(f"🔗 目标嵌入层: {embed_layer.__class__.__name__}[in={embed_layer.num_embeddings}, dim={embed_layer.embedding_dim}]")
+                hook_handle = embed_layer.register_forward_hook(make_inputs_require_grad)
+                print(f"📌 钩子注册成功 (句柄ID: {id(hook_handle)})")
 
-                model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
+        print("\n🔚 完成梯度检查点配置")
+        print("="*50)
         return model
+
 
 
     def _prepare_dataset(

@@ -155,40 +155,101 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         autocast_adapter_dtype: bool = True,
         low_cpu_mem_usage: bool = False,
     ) -> None:
+    #  def ok666():
+        print("🚀 开始初始化PEFT模型")
+        print(f"📌 输入参数检查 - 适配器名称: {adapter_name}, 低内存模式: {low_cpu_mem_usage}")
+        
+        # 基类初始化
         super().__init__()
+        print("✅ 完成基类(torch.nn.Module)初始化")
+
+        # 基础参数设置
         self.modules_to_save = None
+        print("🔄 初始化modules_to_save: None (后续可配置需保存的额外模块)")
+        
         self.active_adapter = adapter_name
+        print(f"🔧 设置当前激活适配器: {self.active_adapter}")
+
         self.peft_type = peft_config.peft_type
-        # These args are special PEFT arguments that users can pass. They need to be removed before passing them to
-        # forward.
+        print(f"🏷️ 检测到PEFT类型: {self.peft_type} ({PeftType(self.peft_type).name})")
+
+        # 特殊前向参数过滤
         self.special_peft_forward_args = {"adapter_names"}
+        print("⚙️ 配置前向参数过滤器: 忽略参数 {'adapter_names'}")
 
+        # 提示学习模式判断
         self._is_prompt_learning = peft_config.is_prompt_learning
+        print(f"\n🔍 检查提示学习配置: {self._is_prompt_learning}")
+        print(f"   ↳ PeftConfig.is_prompt_learning = {peft_config.is_prompt_learning}")
+
         if self._is_prompt_learning:
+            print("\n🟢 进入提示学习(prompt-tuning)处理流程")
             self._peft_config = {adapter_name: peft_config}
+            print(f"   📦 存储适配器配置: 字典键值对 {{{adapter_name}: PeftConfig}}")
+
             self.base_model = model
+            print(f"   🔗 绑定基础模型: {model.__class__.__name__}")
+
+            print(f"   🛠️ 调用add_adapter方法 [低内存模式: {low_cpu_mem_usage}]...")
             self.add_adapter(adapter_name, peft_config, low_cpu_mem_usage=low_cpu_mem_usage)
+            print("   ✅ 适配器添加完成")
         else:
+            print("\n🔵 进入非提示学习处理流程(如LoRA/IA3)")
             self._peft_config = None
+            print("   📭 清空内部配置存储")
+
+            # 获取适配器模型类
             cls = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type]
+            print(f"   🧩 选择PEFT模型类: {cls.__name__}")
+
+            # 内存优化上下文选择
             ctx = init_empty_weights if low_cpu_mem_usage else nullcontext
+            print(f"   💾 初始化上下文: {'空权重初始化' if low_cpu_mem_usage else '普通模式'}")
+
             with ctx():
+                print(f"   🏗️ 构建基础PEFT模型 | 适配器: {adapter_name}")
                 self.base_model = cls(model, {adapter_name: peft_config}, adapter_name)
+                print(f"   🎉 完成模型构造 - 类型: {self.base_model.__class__.__name__}")
+
+            print("\n🔧 配置附加可训练模块")
             self.set_additional_trainable_modules(peft_config, adapter_name)
+            print("   ✅ 可训练模块配置完成")
 
+        # 混合精度适配
+        print("\n🔀 检查混合精度配置")
         if hasattr(self.base_model, "_cast_adapter_dtype"):
+            print(f"   🎚️ 执行适配器精度转换 | 目标类型: {autocast_adapter_dtype}")
             self.base_model._cast_adapter_dtype(
-                adapter_name=adapter_name, autocast_adapter_dtype=autocast_adapter_dtype
+                adapter_name=adapter_name, 
+                autocast_adapter_dtype=autocast_adapter_dtype
             )
+            print("   ✅ 适配器参数精度已对齐")
+        else:
+            print("   ⚠️ 当前模型不支持精度转换方法_cast_adapter_dtype")
 
+        # 梯度检查点配置
+        print("\n⚡ 处理梯度检查点")
         if getattr(model, "is_gradient_checkpointing", True):
+            print("   🛠️ 准备模型以支持梯度检查点...")
             model = self._prepare_model_for_gradient_checkpointing(model)
+            print("   ✅ 前向方法已重写，支持检查点")
+        else:
+            print("   ⚠️ 检测到模型已禁用梯度检查点，跳过配置")
 
-        # the `pretraining_tp` is set for some models to simulate Tensor Parallelism during inference to avoid
-        # numerical differences, https://github.com/pytorch/pytorch/issues/76232 - to avoid any unexpected
-        # behavior we disable that in this line.
+        # 张量并行兼容性修复
+        print("\n🔧 检查模型并行配置")
         if hasattr(self.base_model, "config") and hasattr(self.base_model.config, "pretraining_tp"):
+            original_tp = self.base_model.config.pretraining_tp
+            print(f"   ⚠️ 检测到pretraining_tp参数: {original_tp} (将重置为1以避免数值错误)")
             self.base_model.config.pretraining_tp = 1
+            print(f"   ✅ 已更新配置: pretraining_tp={self.base_model.config.pretraining_tp}")
+        else:
+            print("   ✅ 未检测到pretraining_tp参数，无需调整")
+
+        # print("\n🎉 PEFT模型初始化完成！")
+        # print("="*60)
+        # return model
+
 
     @property
     def peft_config(self) -> dict[str, PeftConfig]:
