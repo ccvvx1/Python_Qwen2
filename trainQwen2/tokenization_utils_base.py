@@ -3862,6 +3862,14 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
                 (optional) Set to False to avoid returning attention mask (default: set to model specifics)
         """
     # def ok():
+        print("Q:什么情况需要进行数据填充？")
+        print("A:当batch里面的样本大于1时，为了对齐需要进行数据填充")
+        print("Q:当batch里面样本的数量大于2，可以批量交叉熵？")
+        print("A:可以的")
+        print("Q:批量交叉熵的好处？")
+        print("A:加速计算，提高模型的稳定性")
+        import sys, os
+        print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
         print("[1] 进入细节填充流程")
         # Load from model defaults
         if return_attention_mask is None:
