@@ -400,6 +400,7 @@ class SFTTrainer(Trainer):
         else:
             model = get_peft_model(model, peft_config)
             print("生成高精度微调模型")
+            print(f"新的模型架构：{model}")
 
         # Handle bf16 casting for 4-bit models
         if args.bf16 and getattr(model, "is_loaded_in_4bit", False) and not is_sharded_qlora:

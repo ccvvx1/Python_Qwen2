@@ -908,10 +908,33 @@ class BaseTunerLayer(ABC):
         This is necessary for the case that the tuner layer wraps another tuner layer.
 
         """
+    # def ok32432():
+        print("\n🔍 开始解包基础层链...")
         base_layer = self
+        print(f"初始层: {type(base_layer).__name__}")
+
+        step = 0
         while hasattr(base_layer, "base_layer"):
+            step += 1
+            print(f"\n步骤 {step}:")
+            print(f"当前层类型: {type(base_layer).__name__}")
+            print("检测到 'base_layer' 属性，继续解包...")
+            
+            prev_type = type(base_layer).__name__
             base_layer = base_layer.base_layer
+            print(f"新层类型: {type(base_layer).__name__}")
+            
+            # 防止无限循环的保护机制
+            if step > 10:
+                print("⚠️ 警告：解包步骤超过10次，可能进入无限循环！")
+                break
+
+        print("\n🎯 最终基础层信息:")
+        print(f"类型: {type(base_layer).__name__}")
+        print(f"是否仍有'base_layer'属性? {hasattr(base_layer, 'base_layer')}")
+        print("解包过程完成\n")
         return base_layer
+
 
     @property
     def weight(self) -> torch.Tensor:

@@ -39,69 +39,167 @@ class LoraLayer(BaseTunerLayer):
     other_param_names = ("r", "lora_alpha", "scaling", "lora_dropout")
 
     def __init__(self, base_layer: nn.Module, ephemeral_gpu_offload: bool = False, **kwargs) -> None:
+    # def ok234324():
+        print("开始初始化LoRA层...")
         self.base_layer = base_layer
+        print(f"设置基础层: {type(self.base_layer).__name__}")
+
         self.r = {}
+        print("初始化秩(r)字典: 空字典")
+
         self.lora_alpha = {}
+        print("初始化缩放系数(lora_alpha)字典: 空字典")
+
         self.scaling = {}
+        print("初始化最终缩放因子(scaling)字典: 空字典")
+
         self.lora_dropout = nn.ModuleDict({})
+        print("创建LoRA Dropout模块字典: ModuleDict初始化完成")
+
         self.lora_A = nn.ModuleDict({})
+        print("创建LoRA_A矩阵模块字典: ModuleDict初始化完成")
+
         self.lora_B = nn.ModuleDict({})
+        print("创建LoRA_B矩阵模块字典: ModuleDict初始化完成")
+
         # For Embedding layer
+        print("\n初始化嵌入层相关参数...")
         self.lora_embedding_A = nn.ParameterDict({})
+        print("创建嵌入层LoRA_A参数字典: ParameterDict初始化完成")
+
         self.lora_embedding_B = nn.ParameterDict({})
+        print("创建嵌入层LoRA_B参数字典: ParameterDict初始化完成")
+
         # Mark the weight as unmerged
+        print("\n设置适配器状态...")
         self._disable_adapters = False
+        print(f"禁用适配器标志: {self._disable_adapters}")
+
         self.merged_adapters = []
+        print(f"初始化已合并适配器列表: {self.merged_adapters}")
+
         self.use_dora: dict[str, bool] = {}
+        print("初始化DoRA使用标记字典: 空字典")
+
         self.lora_bias: dict[str, bool] = {}
-        self.lora_magnitude_vector = torch.nn.ModuleDict()  # for DoRA
+        print("初始化LoRA偏置标记字典: 空字典")
+
+        self.lora_magnitude_vector = torch.nn.ModuleDict()
+        print("创建DoRA模长向量模块字典: ModuleDict初始化完成")
+
         self._caches: dict[str, Any] = {}
-        self.ephemeral_gpu_offload: bool = ephemeral_gpu_offload
+        print("初始化缓存字典: 空字典")
+
+        self.ephemeral_gpu_offload = ephemeral_gpu_offload
+        print(f"设置临时GPU卸载标志: {self.ephemeral_gpu_offload}")
+
         self.kwargs = kwargs
+        print(f"接收额外参数: {kwargs.keys() if kwargs else '无'}")
 
+        print("\nLoRA层初始化完成\n")
+
+
+    # def ok234():
+        print("\n开始获取基础层特征维度...")
         base_layer = self.get_base_layer()
-        if isinstance(base_layer, nn.Linear):
-            in_features, out_features = base_layer.in_features, base_layer.out_features
-        elif isinstance(base_layer, nn.Conv2d):
-            in_features, out_features = base_layer.in_channels, base_layer.out_channels
-        elif isinstance(base_layer, nn.Conv3d):
-            in_features, out_features = base_layer.in_channels, base_layer.out_channels
-        elif isinstance(base_layer, nn.Embedding):
-            in_features, out_features = base_layer.num_embeddings, base_layer.embedding_dim
-        elif isinstance(base_layer, Conv1D):
-            in_features, out_features = (
-                base_layer.weight.ds_shape if hasattr(base_layer.weight, "ds_shape") else base_layer.weight.shape
-            )
-        elif hasattr(base_layer, "infeatures") and hasattr(base_layer, "outfeatures"):
-            # QuantLinear
-            in_features, out_features = base_layer.infeatures, base_layer.outfeatures
-        elif hasattr(base_layer, "input_size") and hasattr(base_layer, "output_size"):
-            # Megatron ColumnParallelLinear,RowParallelLinear
-            in_features, out_features = base_layer.input_size, base_layer.output_size
-        elif hasattr(base_layer, "codebooks") and base_layer.__class__.__name__ == "QuantizedLinear":
-            # AQLM QuantLinear
-            in_features, out_features = base_layer.in_features, base_layer.out_features
-        elif hasattr(base_layer, "w_bit") and base_layer.__class__.__name__ == "WQLinear_GEMM":
-            # Awq layers
-            in_features, out_features = base_layer.in_features, base_layer.out_features
-        elif base_layer.__class__.__name__ == "EetqLinear":
-            # Eetq layers
-            in_features, out_features = base_layer.in_features, base_layer.out_features
-        elif hasattr(base_layer, "W_q") and base_layer.__class__.__name__ == "HQQLinear":
-            # HQQ layers
-            in_features, out_features = base_layer.in_features, base_layer.out_features
-        else:
-            # possibly support user provided custom layer types using dynamic dispatch
-            if hasattr(base_layer, "in_features") and hasattr(base_layer, "out_features"):
-                in_features, out_features = base_layer.in_features, base_layer.out_features
-            else:
-                in_features, out_features = None, None
-            warnings.warn(
-                f"Unsupported layer type '{type(base_layer)}' encountered, proceed at your own risk.", UserWarning
-            )
+        print(f"当前基础层类型: {type(base_layer).__name__}")
 
+        if isinstance(base_layer, nn.Linear):
+            print("├─ 处理Linear层")
+            in_features, out_features = base_layer.in_features, base_layer.out_features
+            print(f"└─ 获取特征: in_features={in_features}, out_features={out_features}")
+            
+        elif isinstance(base_layer, nn.Conv2d):
+            print("├─ 处理2D卷积层")
+            in_features, out_features = base_layer.in_channels, base_layer.out_channels
+            print(f"└─ 获取通道: in_channels={in_features}, out_channels={out_features}")
+            
+        elif isinstance(base_layer, nn.Conv3d):
+            print("├─ 处理3D卷积层")
+            in_features, out_features = base_layer.in_channels, base_layer.out_channels
+            print(f"└─ 获取通道: in_channels={in_features}, out_channels={out_features}")
+            
+        elif isinstance(base_layer, nn.Embedding):
+            print("├─ 处理嵌入层")
+            in_features = base_layer.num_embeddings
+            out_features = base_layer.embedding_dim
+            print(f"└─ 获取参数: num_embeddings={in_features}, embedding_dim={out_features}")
+            
+        elif isinstance(base_layer, Conv1D):
+            print("├─ 处理1D卷积层(特殊类型)")
+            if hasattr(base_layer.weight, "ds_shape"):
+                print("│  └─ 检测到分布式张量(ds_shape)")
+                in_features, out_features = base_layer.weight.ds_shape
+            else:
+                print("│  └─ 使用标准权重形状")
+                in_features, out_features = base_layer.weight.shape
+            print(f"└─ 最终维度: in={in_features}, out={out_features}")
+            
+        elif hasattr(base_layer, "infeatures") and hasattr(base_layer, "outfeatures"):
+            print("├─ 检测到QuantLinear量化层")
+            in_features, out_features = base_layer.infeatures, base_layer.outfeatures
+            print(f"└─ 获取量化特征: infeatures={in_features}, outfeatures={out_features}")
+            
+        elif hasattr(base_layer, "input_size") and hasattr(base_layer, "output_size"):
+            print("├─ 检测到Megatron并行层")
+            in_features, out_features = base_layer.input_size, base_layer.output_size
+            print(f"└─ 获取并行参数: input_size={in_features}, output_size={out_features}")
+            
+        elif hasattr(base_layer, "codebooks") and base_layer.__class__.__name__ == "QuantizedLinear":
+            print("├─ 检测到AQLM量化层")
+            in_features, out_features = base_layer.in_features, base_layer.out_features
+            print(f"└─ 获取AQLM特征: in_features={in_features}, out_features={out_features}")
+
+    # def ok2342():
+        print("\n╔══════════════════════════════════════════╗")
+        print("║ 开始处理量化层特征提取                 ║")
+        print("╚══════════════════════════════════════════╝")
+        
+        # AWQ量化层检测
+        if hasattr(base_layer, "w_bit") and base_layer.__class__.__name__ == "WQLinear_GEMM":
+            print("├─ [AWQ] 检测到GEMM量化层")
+            in_features, out_features = base_layer.in_features, base_layer.out_features
+            print(f"└─ 获取AWQ特征: in={in_features}, out={out_features}")
+            
+        # Eetq量化层检测    
+        elif base_layer.__class__.__name__ == "EetqLinear":
+            print("├─ [Eetq] 检测到Eetq量化层")
+            in_features, out_features = base_layer.in_features, base_layer.out_features
+            print(f"└─ 获取Eetq特征: in={in_features}, out={out_features}")
+            
+        # HQQ量化层检测
+        elif hasattr(base_layer, "W_q") and base_layer.__class__.__name__ == "HQQLinear":
+            print("├─ [HQQ] 检测到HQQ量化层")
+            in_features, out_features = base_layer.in_features, base_layer.out_features
+            print(f"└─ 获取HQQ特征: in={in_features}, out={out_features}")
+            
+        else:
+            print("├─ 尝试通用层类型处理")
+            # 自定义层处理逻辑
+            if hasattr(base_layer, "in_features") and hasattr(base_layer, "out_features"):
+                print("│ ├─ 检测到标准特征属性")
+                in_features, out_features = base_layer.in_features, base_layer.out_features
+                print(f"│ └─ 获取通用特征: in={in_features}, out={out_features}")
+            else:
+                print("│ ╠═▶ 警告！未找到标准特征属性")
+                in_features, out_features = None, None
+                print("│ ╚═▶ 特征维度设置为: (None, None)")
+                
+            # 发出警告
+            warning_msg = f"不支持的层类型: {type(base_layer)}"
+            print("╔══════════════════════════════════════════╗")
+            print(f"║ ⚠️ 警告: {warning_msg:<25} ║")
+            print("╚══════════════════════════════════════════╝")
+            warnings.warn(warning_msg, UserWarning)
+
+        # 最终赋值
+        print("\n╭────────────────────────────────────────────╮")
+        print(f"│ 最终设置: in_features={str(in_features):<5} │ out_features={str(out_features):<5} │")
+        print("╰────────────────────────────────────────────╯")
+        
         self.in_features = in_features
         self.out_features = out_features
+
 
     def update_layer(
         self,
@@ -114,52 +212,128 @@ class LoraLayer(BaseTunerLayer):
         use_dora: bool = False,
         lora_bias: bool = False,
     ):
-        # This code works for linear layers, override for other layer types
-        if r <= 0:
-            raise ValueError(f"`r` should be a positive integer value but the value passed is {r}")
+    # def ok43243():
+        print("\n▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄")
+        print(f"⚙️ 开始配置适配器 '{adapter_name}'")
+        print(f"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀")
 
+        # 参数验证
+        print(f"\n🔍 参数验证:")
+        print(f"| {'参数':<15} | {'值':<8} | {'类型':<12} |")
+        print("|----------------|---------|------------|")
+        print(f"| r             | {r:<8} | {type(r).__name__:<12} |")
+        print(f"| lora_alpha    | {lora_alpha:<8} | {type(lora_alpha).__name__:<12} |")
+        print(f"| lora_dropout  | {lora_dropout:<8.2f} | float       |")
+        print(f"| use_rslora    | {use_rslora!s:<8} | {type(use_rslora).__name__:<12} |")
+        
+        if r <= 0:
+            error_msg = f"无效的秩r: {r} (必须为正整数)"
+            print("\n❌ 错误:", error_msg)
+            raise ValueError(error_msg)
+        else:
+            print("\n✅ 参数验证通过")
+
+        # 存储基础参数
+        print("\n📦 存储适配器参数:")
         self.r[adapter_name] = r
         self.lora_alpha[adapter_name] = lora_alpha
+        print(f"| 参数存储       | r={r}, alpha={lora_alpha} |")
+
+        # Dropout配置
+        print("\n🌧️ 配置Dropout层:")
         if lora_dropout > 0.0:
             lora_dropout_layer = nn.Dropout(p=lora_dropout)
+            print(f"创建Dropout层 (p={lora_dropout:.2f})")
         else:
             lora_dropout_layer = nn.Identity()
-
+            print("禁用Dropout，使用Identity层")
+        
         self.lora_dropout.update(nn.ModuleDict({adapter_name: lora_dropout_layer}))
-        # Actual trainable parameters
+        print(f"已更新Dropout字典: {list(self.lora_dropout.keys())}")
+
+        # 初始化LoRA矩阵
+        print("\n🧮 初始化低秩矩阵:")
+        print(f"LoRA_A: in_features={self.in_features} → r={r}")
         self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
+        
+        print(f"LoRA_B: r={r} → out_features={self.out_features} (bias={lora_bias})")
         self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
         self.lora_bias[adapter_name] = lora_bias
 
+        # 计算缩放因子
+        print("\n⚖️ 计算缩放因子:")
         if use_rslora:
+            formula = f"{lora_alpha}/√{r} ≈ {lora_alpha/math.sqrt(r):.4f}"
             self.scaling[adapter_name] = lora_alpha / math.sqrt(r)
+            print(f"使用RSLoRA公式: {formula}")
         else:
+            formula = f"{lora_alpha}/{r} = {lora_alpha/r:.4f}"
             self.scaling[adapter_name] = lora_alpha / r
+            print(f"使用标准公式: {formula}")
+        
 
-        # for inits that require access to the base weight, use gather_param_ctx so that the weight is gathered when using DeepSpeed
+    # def ok234322():
+        print("\n▛▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▜")
+        print("🔧 开始适配器初始化流程")
+        print(f"▙ 适配器名称: {adapter_name} | 初始化方法: {init_lora_weights} ▟")
+        
+        # 初始化方法选择
+        init_method = str(init_lora_weights).lower()
+        print(f"\n🔎 初始化方法检测: {init_method}")
+        
         if isinstance(init_lora_weights, str) and init_lora_weights.startswith("pissa"):
+            print(f"├─ [PiSSA] 检测到参数高效初始化方法: {init_lora_weights}")
             with gather_params_ctx(self.get_base_layer().weight):
+                print(f"│  ├─ 进入参数收集上下文 (设备: {self.get_base_layer().weight.device})")
                 self.pissa_init(adapter_name, init_lora_weights)
-        elif isinstance(init_lora_weights, str) and init_lora_weights.lower() == "olora":
+                print(f"└─ PiSSA初始化完成，版本: {init_lora_weights.split('_')[-1]}")
+                
+        elif isinstance(init_lora_weights, str) and init_method == "olora":
+            print("├─ [OLoRA] 检测到正交初始化方法")
             with gather_params_ctx(self.get_base_layer().weight):
+                print(f"│  ├─ 进入参数收集上下文 (设备: {self.get_base_layer().weight.device})")
                 self.olora_init(adapter_name)
-        elif init_lora_weights == "loftq":
+                print("└─ OLoRA正交初始化完成")
+                
+        elif init_method == "loftq":
+            print("├─ [LoFTQ] 检测到低精度浮点量化初始化")
             with gather_params_ctx(self.get_base_layer().weight):
+                print(f"│  ├─ 进入参数收集上下文 (设备: {self.get_base_layer().weight.device})")
                 self.loftq_init(adapter_name)
-        elif init_lora_weights == "eva":
+                print("└─ LoFTQ量化初始化完成")
+                
+        elif init_method == "eva":
+            print("├─ [EVA] 零初始化方法检测")
+            print(f"│  └─ 初始化LoRA_B权重为全零 (shape: {self.lora_B[adapter_name].weight.shape})")
             nn.init.zeros_(self.lora_B[adapter_name].weight)
+            print("└─ EVA零初始化完成")
+            
         elif init_lora_weights:
+            print(f"├─ 通用初始化方法: {type(init_lora_weights).__name__}")
             self.reset_lora_parameters(adapter_name, init_lora_weights)
-        # call this before dora_init
+            print(f"└─ 参数重置完成 (方法: {init_lora_weights})")
+            
+        # 设备同步
+        print("\n📡 设备同步:")
+        print(f"移动适配器到基础层设备 ({self.get_base_layer().weight.device})")
         self._move_adapter_to_device_of_base_layer(adapter_name)
+        print("✅ 设备同步完成")
 
+        # DoRA初始化
+        print(f"\n🎯 DoRA配置检测: {'启用' if use_dora else '禁用'}")
         if use_dora:
+            print("├─ [DoRA] 开始方向/幅度分解初始化")
             self.dora_init(adapter_name)
-            self.use_dora[adapter_name] = True
-        else:
-            self.use_dora[adapter_name] = False
+            print(f"└─ DoRA配置完成 (方向向量维度: {self.lora_magnitude_vector[adapter_name].weight.shape})")
+        self.use_dora[adapter_name] = use_dora
+        print(f"DoRA状态更新: {use_dora}")
 
+        # 激活适配器
+        print(f"\n⚡ 激活适配器: {self.active_adapters}")
         self.set_adapter(self.active_adapters)
+        print("✅ 初始化流程最终完成 ✅")
+        print("▛▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▜\n")
+
 
     def reset_lora_parameters(self, adapter_name, init_lora_weights):
         if init_lora_weights is False:
@@ -432,11 +606,38 @@ class Linear(nn.Module, LoraLayer):
         lora_bias: bool = False,
         **kwargs,
     ) -> None:
+    # def ok3543543():
+        print("\n🚀 初始化LoRA适配器层")
+        print(f"📌 适配器名称: {adapter_name}")
+        print(f"🔧 基础层类型: {type(base_layer).__name__}")
+
+        # 初始化继承链
+        print("\n⚙️ 执行父类初始化:")
         super().__init__()
+        print("✅ nn.Module 初始化完成")
+
+        print("\n⚙️ 初始化LoraLayer:")
         LoraLayer.__init__(self, base_layer, **kwargs)
+        print(f"✅ LoraLayer初始化完成 | 关键参数: { {k:v for k,v in kwargs.items() if not k.startswith('_')} }")
+
+        # 参数配置
+        print("\n🔧 配置层参数:")
         self.fan_in_fan_out = fan_in_fan_out
+        print(f"   🌀 fan_in_fan_out = {fan_in_fan_out} ({'启用' if fan_in_fan_out else '禁用'})")
 
         self._active_adapter = adapter_name
+        print(f"   📌 激活适配器 = {adapter_name}")
+
+        # 更新层配置
+        print("\n🔄 调用update_layer配置:")
+        print(f"   🔢 rank(r) = {r}")
+        print(f"   α系数 = {lora_alpha} (缩放因子: {lora_alpha/r if r else 'N/A'})")
+        print(f"   🎲 Dropout率 = {lora_dropout}")
+        print(f"   ⚖️ 权重初始化方式 = {init_lora_weights}")
+        print(f"   🌟 RSLoRA = {'启用' if use_rslora else '禁用'}")
+        print(f"   🎯 DoRA = {'启用' if use_dora else '禁用'}")
+        print(f"   ⚖️ 偏置处理 = {lora_bias or '无'}")
+
         self.update_layer(
             adapter_name,
             r,
@@ -447,7 +648,24 @@ class Linear(nn.Module, LoraLayer):
             use_dora=use_dora,
             lora_bias=lora_bias,
         )
+
+        # 特殊卷积标记
+        print("\n🔖 设置卷积类型标记:")
         self.is_target_conv_1d_layer = is_target_conv_1d_layer
+        conv_type = "1D" if is_target_conv_1d_layer else "标准"
+        print(f"   🎮 卷积类型 = {conv_type} | 值: {is_target_conv_1d_layer}")
+
+        # 最终设备检查
+        print("\n🔍 最终设备状态:")
+        if hasattr(self, "lora_A"):
+            device = self.lora_A[adapter_name].weight.device
+            print(f"   🔗 LoRA参数设备: {device}")
+        else:
+            print("⚠️ 未检测到LoRA参数矩阵")
+
+        print("\n✅ LoRA层初始化完成")
+        print("="*60)
+
 
     def merge(self, safe_merge: bool = False, adapter_names: Optional[list[str]] = None) -> None:
         """
@@ -1232,40 +1450,86 @@ def dispatch_default(
     lora_config: LoraConfig,
     **kwargs,
 ) -> Optional[torch.nn.Module]:
-    new_module = None
+# def ok2432():
+    print("\n🚀 开始创建适配器模块")
+    print(f"📌 目标层类型: {type(target).__name__}")
+    print(f"🔧 适配器名称: {adapter_name}")
+    print(f"⚙️ 初始参数: { {k:v for k,v in kwargs.items() if not isinstance(v, dict)} }")
 
+    new_module = None
+    
+    # 获取基础层
+    print("\n🔍 解析基础层类型:")
     if isinstance(target, BaseTunerLayer):
         target_base_layer = target.get_base_layer()
+        print(f"   🎯 基础层来自TunerLayer: {type(target_base_layer).__name__}")
     else:
         target_base_layer = target
+        print(f"   🎯 直接使用目标层: {type(target_base_layer).__name__}")
 
+    # Embedding处理
     if isinstance(target_base_layer, torch.nn.Embedding):
+        print("\n📦 处理Embedding层:")
         embedding_kwargs = kwargs.copy()
+        print(f"   📥 复制原始参数（排除fan_in_fan_out）")
         embedding_kwargs.pop("fan_in_fan_out", None)
+        
+        print(f"   🔄 合并LoFTQ配置: {lora_config.loftq_config}")
         embedding_kwargs.update(lora_config.loftq_config)
+        
+        print(f"🎯 创建Embedding适配器")
         new_module = Embedding(target, adapter_name, **embedding_kwargs)
+        print(f"✅ 模块创建成功 | 类型: {type(new_module).__name__}")
+
+    # Conv2D处理
     elif isinstance(target_base_layer, torch.nn.Conv2d):
+        print("\n🎮 处理Conv2D层:")
+        print(f"   🔄 合并LoFTQ配置: {lora_config.loftq_config}")
         kwargs.update(lora_config.loftq_config)
+        
+        print(f"🎯 创建Conv2D适配器")
         new_module = Conv2d(target, adapter_name, **kwargs)
+        print(f"✅ 模块创建成功 | 参数: kernel_size={target_base_layer.kernel_size}")
+
+    # Conv3D处理 
     elif isinstance(target_base_layer, torch.nn.Conv3d):
+        print("\n🎮 处理Conv3D层:")
+        print(f"   🔄 合并LoFTQ配置: {lora_config.loftq_config}")
         kwargs.update(lora_config.loftq_config)
+        
+        print(f"🎯 创建Conv3D适配器") 
         new_module = Conv3d(target, adapter_name, **kwargs)
+        print(f"✅ 模块创建成功 | 参数: kernel_size={target_base_layer.kernel_size}")
+
+    # Linear处理
     elif isinstance(target_base_layer, torch.nn.Linear):
+        print("\n📏 处理Linear层:")
         if kwargs["fan_in_fan_out"]:
-            warnings.warn(
-                "fan_in_fan_out is set to True but the target module is `torch.nn.Linear`. "
-                "Setting fan_in_fan_out to False."
-            )
+            print("⚠️ 警告: 检测到fan_in_fan_out=True与Linear层冲突")
+            print("   🔧 自动修正为fan_in_fan_out=False")
             kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = False
+            
+        print(f"   🔄 合并LoFTQ配置: {lora_config.loftq_config}")
         kwargs.update(lora_config.loftq_config)
+        
+        print(f"🎯 创建Linear适配器")
         new_module = Linear(target, adapter_name, **kwargs)
-    elif isinstance(target_base_layer, Conv1D):
+        print(f"✅ 模块创建成功 | 特征数: in={target_base_layer.in_features}, out={target_base_layer.out_features}")
+
+    # Conv1D处理
+    elif isinstance(target_base_layer, Conv1D): 
+        print("\n📏 处理Conv1D层:")
         if not kwargs["fan_in_fan_out"]:
-            warnings.warn(
-                "fan_in_fan_out is set to False but the target module is `Conv1D`. " "Setting fan_in_fan_out to True."
-            )
+            print("⚠️ 警告: 检测到fan_in_fan_out=False与Conv1D层冲突")
+            print("   🔧 自动修正为fan_in_fan_out=True")
             kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = True
+            
+        print(f"   🔄 合并LoFTQ配置: {lora_config.loftq_config}")
         kwargs.update(lora_config.loftq_config)
+        
+        print(f"🎯 创建Conv1D适配器")
         new_module = Linear(target, adapter_name, is_target_conv_1d_layer=True, **kwargs)
+        print(f"✅ 模块创建成功 | 权重形状: {target_base_layer.weight.shape}")
+
 
     return new_module
