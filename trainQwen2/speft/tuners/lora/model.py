@@ -299,6 +299,7 @@ class LoraModel(BaseTuner):
                 frozen_params = sum(p.numel() for p in new_module.parameters())
                 print(f"❄️ 冻结参数数量: {frozen_params}")
             else:
+                print(f"可以激活的列表合集{self.active_adapters}")
                 print("✅ 保持新模块可训练状态")
 
             # 执行模块替换
@@ -319,44 +320,101 @@ class LoraModel(BaseTuner):
 
 
     def _replace_module(self, parent, child_name, new_module, child):
+    #  def ok23432():
+        print("\n🚀 开始执行模块替换后处理流程")
+        print(f"📌 父模块类型: {type(parent).__name__}")
+        print(f"🔧 替换操作: {child_name} → {type(new_module).__name__}")
+
+        # 执行模块替换
+        print(f"\n🔄 设置父模块属性 [{child_name}]")
         setattr(parent, child_name, new_module)
-        # It's not necessary to set requires_grad here, as that is handled by
-        # _mark_only_adapters_as_trainable
+        print(f"✅ 验证替换结果: {hasattr(parent, child_name)}")
 
-        # child layer wraps the original module, unpack it
+        # 解包基础层
+        original_child = child
         if hasattr(child, "base_layer"):
+            print("\n🎁 检测到基础层封装，解包操作:")
             child = child.base_layer
+            print(f"   📦 原模块类型: {type(original_child).__name__}")
+            print(f"   🎯 新基础层类型: {type(child).__name__}")
 
+        # 权重转移逻辑
+        print("\n🏋️ 开始权重/偏置转移:")
         if not hasattr(new_module, "base_layer"):
-            if hasattr(new_module, "W_q"):  # HQQ
+            weight_source = None
+            # HQQ特殊处理
+            if hasattr(new_module, "W_q"):
+                print("🎯 检测到HQQ量化格式 (W_q)")
                 new_module.W_q = child.W_q
+                weight_source = "W_q"
             else:
+                print("⚖️ 标准权重转移")
                 new_module.weight = child.weight
-            if hasattr(child, "bias"):
-                new_module.bias = child.bias
+                weight_source = "weight"
 
+            print(f"   📥 权重来源: {type(child).__name__}.{weight_source}")
+            print(f"   📊 权重形状: {getattr(child, weight_source).shape}")
+
+            if hasattr(child, "bias"):
+                print("⚖️ 偏置转移")
+                new_module.bias = child.bias
+                print(f"   📐 偏置形状: {child.bias.shape}")
+            else:
+                print("⚠️ 未检测到偏置参数")
+
+        # 状态转移
+        print("\n📦 处理模块状态:")
         if getattr(child, "state", None) is not None:
+            print(f"✅ 检测到状态参数 (keys: {child.state.keys()})")
+            
             if hasattr(new_module, "base_layer"):
+                print("   🎯 转移到base_layer")
                 new_module.base_layer.state = child.state
             else:
+                print("   🎯 直接设置状态")
                 new_module.state = child.state
+            
+            print(f"🚚 设备迁移: {child.weight.device}")
             new_module.to(child.weight.device)
+            print(f"✅ 新模块设备: {next(new_module.parameters()).device}")
+        else:
+            print("⚠️ 无状态需要转移")
 
+        # 设备分配
+        print("\n🔧 检查元设备分配:")
         meta = torch.device("meta")
-        # dispatch to correct device
         for name, module in new_module.named_modules():
-            if (self.prefix in name) or ("ranknum" in name):
-                weight = (
-                    child.qweight
-                    if hasattr(child, "qweight")
-                    else child.W_q
-                    if hasattr(child, "W_q")
-                    else child.weight
-                    if hasattr(child, "weight")
-                    else next(child.parameters())
-                )
+            if self.prefix in name or "ranknum" in name:
+                print(f"\n🔍 处理子模块: {name}")
+                
+                # 确定权重源
+                weight = None
+                if hasattr(child, "qweight"):
+                    weight = child.qweight
+                    src_desc = "qweight(量化)"
+                elif hasattr(child, "W_q"):
+                    weight = child.W_q
+                    src_desc = "W_q(HQQ)"
+                elif hasattr(child, "weight"):
+                    weight = child.weight
+                    src_desc = "weight"
+                else:
+                    weight = next(child.parameters())
+                    src_desc = "首个参数"
+                
+                print(f"   ⚖️ 权重源: {src_desc} | 设备: {weight.device}")
+                
+                # 检查元设备
                 if not any(p.device == meta for p in module.parameters()):
+                    print(f"   🚚 迁移到 {weight.device}")
                     module.to(weight.device)
+                    # print(f"   ✅ 当前设备: {next(module.parameters()).device}")
+                else:
+                    print("   ⚠️ 检测到元设备，保持延迟加载状态")
+
+        print("\n🎉 模块后处理完成")
+        print("="*60)
+
 
     def _mark_only_adapters_as_trainable(self, model: nn.Module) -> None:
         for n, p in model.named_parameters():
