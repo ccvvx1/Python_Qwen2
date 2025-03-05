@@ -11,8 +11,10 @@ from datasets import DatasetDict, Dataset
 
 data = {
     "train": [
-        {"instruction": "你好吗", "response": "<think>说的是什么</think>你大爷是吧"},
-        {"instruction": "不会吧啊", "response": "<think>不太懂</think>你真好"},
+        # {"instruction": "你好吗", "response": "<think>说的是什么</think>你大爷是吧"},
+        # {"instruction": "不会吧啊", "response": "<think>不太懂</think>你真好"},
+        {"instruction": "你好吗", "response": "你大爷是吧"},
+        {"instruction": "不会吧啊", "response": "你真好"},
         # {"instruction": "天气不错啊", "response": "<think>向天</think>天天晒太阳"},
         # {"instruction": "配套也是不错的", "response": "<think>啰嗦</think>非常标准的配套"},
         # {"instruction": "厂商服务到位是的", "response": "<think>说的是什么</think>昨天的描述"},
@@ -155,7 +157,10 @@ training_args = TrainingArguments(
     logging_steps=2,
     learning_rate=2e-5,
     fp16=True,
-    optim="paged_adamw_32bit",
+    # optim="paged_adamw_32bit",
+    # optim="adamw_8bit", 
+    optim="lion_8bit", 
+    # optim="sgd_8bit", 
     max_grad_norm=0.3,
     warmup_ratio=0.03,
     lr_scheduler_type="cosine"

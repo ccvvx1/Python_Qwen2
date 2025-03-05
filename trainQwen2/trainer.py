@@ -4326,8 +4326,8 @@ class Trainer:
             # 步骤3：解码输入文本
             decoded_input = self.tokenizer.decode(inputs["input_ids"][0])
             print("需要输入的内容 0：",decoded_input)  # 输出: "I love programming in Python!" , skip_special_tokens=True
-            decoded_input = self.tokenizer.decode(inputs["input_ids"][1])
-            print("需要输入的内容 1：",decoded_input)  # 输出: "I love programming in Python!" , skip_special_tokens=True
+            # decoded_input = self.tokenizer.decode(inputs["input_ids"][1])
+            # print("需要输入的内容 1：",decoded_input)  # 输出: "I love programming in Python!" , skip_special_tokens=True
             outputs = model(**inputs)
             # result = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 

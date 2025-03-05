@@ -3861,49 +3861,118 @@ class PreTrainedTokenizerBase(SpecialTokensMixin, PushToHubMixin):
             return_attention_mask:
                 (optional) Set to False to avoid returning attention mask (default: set to model specifics)
         """
-        print("进行填充")
+    # def ok():
+        print("[1] 进入细节填充流程")
         # Load from model defaults
         if return_attention_mask is None:
+            print(f"[2] return_attention_mask未显式设置, 自动检测模型输入字段: {self.model_input_names}")
             return_attention_mask = "attention_mask" in self.model_input_names
+            print(f"[3] 自动设置 return_attention_mask = {return_attention_mask}")
 
         required_input = encoded_inputs[self.model_input_names[0]]
+        print(f"[4] 基准输入字段为 '{self.model_input_names[0]}', 长度={len(required_input)}, 样例值={required_input[:3]}...")
 
         if padding_strategy == PaddingStrategy.LONGEST:
+            print(f"[5] 使用LONGEST填充策略, 原始max_length={max_length} -> 重置为当前输入长度")
             max_length = len(required_input)
+            print(f"[6] 新max_length={max_length}")
 
         if max_length is not None and pad_to_multiple_of is not None and (max_length % pad_to_multiple_of != 0):
+            original_max = max_length
             max_length = ((max_length // pad_to_multiple_of) + 1) * pad_to_multiple_of
+            print(f"[7] 对齐填充倍数: {original_max} -> {max_length} (pad_to_multiple_of={pad_to_multiple_of})")
 
-        needs_to_be_padded = padding_strategy != PaddingStrategy.DO_NOT_PAD and len(required_input) != max_length
+        current_length = len(required_input)
+        needs_to_be_padded = padding_strategy != PaddingStrategy.DO_NOT_PAD and current_length != max_length
+        print(f"[8] 填充需求判断: 策略={padding_strategy}, 当前长度={current_length}, 目标长度={max_length} -> 需要填充? {needs_to_be_padded}")
+        print("填充的方向：", self.padding_side)
 
         # Initialize attention mask if not present.
-        if return_attention_mask and "attention_mask" not in encoded_inputs:
-            encoded_inputs["attention_mask"] = [1] * len(required_input)
+        if return_attention_mask:
+            print("[9] 准备处理attention_mask")
+            if "attention_mask" not in encoded_inputs:
+                print(f"[10] 创建新attention_mask (全1数组), 长度={current_length}")
+                encoded_inputs["attention_mask"] = [1] * current_length
+                print(f"[11] 初始化结果: {encoded_inputs['attention_mask'][:5]}... (仅显示前5位)")
 
+
+    # def ok1():
         if needs_to_be_padded:
+            print("\n[开始填充操作]")
+            print(f"原始序列长度: {len(required_input)}, 目标长度: {max_length}")
+            
             difference = max_length - len(required_input)
+            print(f"需填充长度差: {difference} tokens")
+            
+            # 确定填充方向
             padding_side = padding_side if padding_side is not None else self.padding_side
+            print(f"填充方向: {padding_side} (默认策略: {self.padding_side})")
 
             if padding_side == "right":
+                print("\n[执行右侧填充]")
+                
+                # 处理attention_mask
                 if return_attention_mask:
+                    original_attn_len = len(encoded_inputs["attention_mask"])
                     encoded_inputs["attention_mask"] = encoded_inputs["attention_mask"] + [0] * difference
+                    print(f"attention_mask: {original_attn_len} → {len(encoded_inputs['attention_mask'])}")
+                    print(f"填充内容: 尾部追加{difference}个0 → 样例: {encoded_inputs['attention_mask'][:5]}...")
+                
+                # 处理token_type_ids
                 if "token_type_ids" in encoded_inputs:
-                    encoded_inputs["token_type_ids"] = (
-                        encoded_inputs["token_type_ids"] + [self.pad_token_type_id] * difference
-                    )
+                    original_type_len = len(encoded_inputs["token_type_ids"])
+                    encoded_inputs["token_type_ids"] += [self.pad_token_type_id] * difference
+                    print(f"token_type_ids: {original_type_len} → {len(encoded_inputs['token_type_ids'])}")
+                    print(f"填充内容: pad_token_type_id={self.pad_token_type_id} → 样例: {encoded_inputs['token_type_ids'][-5:]}")
+                
+                # 处理special_tokens_mask
                 if "special_tokens_mask" in encoded_inputs:
-                    encoded_inputs["special_tokens_mask"] = encoded_inputs["special_tokens_mask"] + [1] * difference
-                encoded_inputs[self.model_input_names[0]] = required_input + [self.pad_token_id] * difference
+                    original_special_len = len(encoded_inputs["special_tokens_mask"])
+                    encoded_inputs["special_tokens_mask"] += [1] * difference
+                    print(f"special_tokens_mask: {original_special_len} → {len(encoded_inputs['special_tokens_mask'])}")
+                    print(f"填充内容: 尾部追加{difference}个1 → 样例: {encoded_inputs['special_tokens_mask'][-5:]}")
+                
+                # 处理主输入字段
+                main_field = self.model_input_names[0]
+                original_main_len = len(encoded_inputs[main_field])
+                encoded_inputs[main_field] = required_input + [self.pad_token_id] * difference
+                print(f"\n主字段 '{main_field}':")
+                print(f"长度变化: {original_main_len} → {len(encoded_inputs[main_field])}")
+                print(f"填充内容: pad_token_id={self.pad_token_id} → 头部样例: {encoded_inputs[main_field][:5]}...")
+                print(f"尾部样例: {encoded_inputs[main_field][-5:]}")
+
             elif padding_side == "left":
+                print("\n[执行左侧填充]")
+                
+                # 处理attention_mask
                 if return_attention_mask:
+                    original_attn_len = len(encoded_inputs["attention_mask"])
                     encoded_inputs["attention_mask"] = [0] * difference + encoded_inputs["attention_mask"]
+                    print(f"attention_mask: {original_attn_len} → {len(encoded_inputs['attention_mask'])}")
+                    print(f"填充内容: 头部插入{difference}个0 → 样例: {encoded_inputs['attention_mask'][:5]}...")
+                
+                # 处理token_type_ids
                 if "token_type_ids" in encoded_inputs:
-                    encoded_inputs["token_type_ids"] = [self.pad_token_type_id] * difference + encoded_inputs[
-                        "token_type_ids"
-                    ]
+                    original_type_len = len(encoded_inputs["token_type_ids"])
+                    encoded_inputs["token_type_ids"] = [self.pad_token_type_id] * difference + encoded_inputs["token_type_ids"]
+                    print(f"token_type_ids: {original_type_len} → {len(encoded_inputs['token_type_ids'])}")
+                    print(f"填充内容: pad_token_type_id={self.pad_token_type_id} → 样例: {encoded_inputs['token_type_ids'][:5]}")
+                
+                # 处理special_tokens_mask
                 if "special_tokens_mask" in encoded_inputs:
+                    original_special_len = len(encoded_inputs["special_tokens_mask"])
                     encoded_inputs["special_tokens_mask"] = [1] * difference + encoded_inputs["special_tokens_mask"]
-                encoded_inputs[self.model_input_names[0]] = [self.pad_token_id] * difference + required_input
+                    print(f"special_tokens_mask: {original_special_len} → {len(encoded_inputs['special_tokens_mask'])}")
+                    print(f"填充内容: 头部插入{difference}个1 → 样例: {encoded_inputs['special_tokens_mask'][:5]}")
+                
+                # 处理主输入字段
+                main_field = self.model_input_names[0]
+                original_main_len = len(encoded_inputs[main_field])
+                encoded_inputs[main_field] = [self.pad_token_id] * difference + required_input
+                print(f"\n主字段 '{main_field}':")
+                print(f"长度变化: {original_main_len} → {len(encoded_inputs[main_field])}")
+                print(f"填充内容: pad_token_id={self.pad_token_id} → 头部样例: {encoded_inputs[main_field][:5]}")
+                print(f"尾部样例: {encoded_inputs[main_field][-5:]}...")
             else:
                 raise ValueError(f"Invalid padding strategy:{padding_side}")
 

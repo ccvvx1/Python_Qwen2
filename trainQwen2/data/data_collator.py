@@ -942,6 +942,15 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
                 
                 # 执行掩码
                 labels[pad_mask] = -100
+                print("Q:为什么掩码不使用传统函数的处理方法？例如类似cpp那样遍历labels整个字符组，逐一处理？")
+                print("A:python的好处是可以直接记录需要处理的id列表，然后在数组对应id处直接赋值，而且还能统计需要变更字符的数量")
+                print("Q:为什么需要把labels的掩码填充为-100，而不是采用tokenizers的pad_id")
+                print("A:因为pytorch自带计算交叉熵的函数的忽略值默认是-100")
+                print("Q:掩码-100在交叉熵的计算好处？")
+                print("A:掩码-100在交叉熵计算接近0，可以忽略，不需要注意")
+                import sys, os
+                print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
+
                 print("处理后的标签示例:", labels[0, :8].cpu().tolist())
                 
                 # 有效性验证
