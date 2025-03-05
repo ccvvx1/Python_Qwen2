@@ -856,50 +856,100 @@ class Linear(nn.Module, LoraLayer):
         return output_tensor
 
     def forward(self, x: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
-        self._check_forward_args(x, *args, **kwargs)
-        adapter_names = kwargs.pop("adapter_names", None)
+    # def ok21432():
+        print("\n===== 开始前向传播=====")
+        print(f"  [参数检查] 调用 _check_forward_args()")
+        self._check_forward_args(x, *args, **kwargs)  # 验证输入参数合法性
 
+        print(f"  [参数提取] 从 kwargs 提取 adapter_names")
+        adapter_names = kwargs.pop("adapter_names", None)
+        print(f"    提取的 adapter_names = {adapter_names}")
+
+        print("\n--- 分支判断: 是否禁用适配器? ---")
         if self.disable_adapters:
+            print("  ✅ 禁用适配器模式激活")
             if self.merged:
+                print("  ⚠️ 检测到已合并的适配器，执行 unmerge()")
                 self.unmerge()
+            print("  ⚡ 仅使用基础层 (base_layer) 计算")
             result = self.base_layer(x, *args, **kwargs)
+            print(f"  基础层输出: shape={result.shape}, dtype={result.dtype}")
+
         elif adapter_names is not None:
+            print("\n--- 分支: 混合批次适配器模式 ---")
+            print(f"  ⚡ 调用 _mixed_batch_forward()，使用适配器列表: {adapter_names}")
             result = self._mixed_batch_forward(x, *args, adapter_names=adapter_names, **kwargs)
+
         elif self.merged:
+            print("\n--- 分支: 使用已合并的适配器 ---")
+            print("  ⚡ 直接调用基础层 (merged 状态)")
             result = self.base_layer(x, *args, **kwargs)
+            print(f"  合并层输出: shape={result.shape}, dtype={result.dtype}")
+
         else:
+            print("\n--- 分支: 动态应用激活的适配器 ---")
+            print("  ⚡ 基础层计算初始结果")
             result = self.base_layer(x, *args, **kwargs)
             torch_result_dtype = result.dtype
-            for active_adapter in self.active_adapters:
+            print(f"  初始结果: shape={result.shape}, dtype={torch_result_dtype}")
+
+            print(f"\n  [适配器处理] 遍历激活的适配器: {self.active_adapters}")
+            for idx, active_adapter in enumerate(self.active_adapters):
+                print(f"\n    -- 处理第 {idx+1} 个适配器: {active_adapter} --")
                 if active_adapter not in self.lora_A.keys():
+                    print(f"    ⚠️ 跳过: {active_adapter} 不在 lora_A 的键中")
                     continue
+
+                print("    ✅ 获取适配器参数: lora_A, lora_B, dropout, scaling")
                 lora_A = self.lora_A[active_adapter]
                 lora_B = self.lora_B[active_adapter]
                 dropout = self.lora_dropout[active_adapter]
                 scaling = self.scaling[active_adapter]
-                x = x.to(lora_A.weight.dtype)
+                print(f"      参数形状: A={lora_A.weight.shape}, B={lora_B.weight.shape}, scaling={scaling}")
+
+                print(f"\n    [数据类型转换] 输入 x 的 dtype: {x.dtype} -> {lora_A.weight.dtype}")
+                x_converted = x.to(lora_A.weight.dtype)
+                print(f"      转换后 x: shape={x_converted.shape}, dtype={x_converted.dtype}")
 
                 if not self.use_dora[active_adapter]:
-                    result = result + lora_B(lora_A(dropout(x))) * scaling
+                    print("    ⚡ 标准 LoRA 计算: lora_B(lora_A(dropout(x))) * scaling")
+                    if not isinstance(dropout, nn.Identity):
+                        print(f"    应用 dropout (rate={dropout.p})")
+                    lora_output = lora_B(lora_A(dropout(x_converted))) * scaling
+                    print(f"      LoRA 输出: shape={lora_output.shape}, dtype={lora_output.dtype}")
+                    result = result + lora_output
+                    print(f"      累加结果: shape={result.shape}")
+
                 else:
+                    print("    ⚡ DORA 模式计算")
                     if isinstance(dropout, nn.Identity) or not self.training:
+                        print("    保留基础结果 (Identity或非训练模式)")
                         base_result = result
                     else:
-                        x = dropout(x)
+                        print(f"    应用 dropout (rate={dropout.p})")
+                        x_dropped = dropout(x_converted)
                         base_result = None
-
-                    result = result + self.lora_magnitude_vector[active_adapter](
-                        x,
+                    
+                    print("    调用 lora_magnitude_vector 计算 DORA 调整")
+                    dora_output = self.lora_magnitude_vector[active_adapter](
+                        x_dropped if not isinstance(dropout, nn.Identity) else x_converted,
                         lora_A=lora_A,
                         lora_B=lora_B,
                         scaling=scaling,
                         base_layer=self.get_base_layer(),
                         base_result=base_result,
                     )
+                    print(f"      DORA 输出: shape={dora_output.shape}, dtype={dora_output.dtype}")
+                    result = result + dora_output
+                    print(f"      累加结果: shape={result.shape}")
 
+            print(f"\n  [恢复数据类型] 结果从 {result.dtype} -> 初始类型 {torch_result_dtype}")
             result = result.to(torch_result_dtype)
+            print(f"  最终结果: shape={result.shape}, dtype={result.dtype}")
 
+        print("\n===== 前向传播完成 =====")
         return result
+
 
     def __repr__(self) -> str:
         rep = super().__repr__()
