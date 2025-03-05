@@ -1095,36 +1095,97 @@ class BaseTunerLayer(ABC):
         """
         Move the adapter of the given name to the device of the base layer.
         """
+    # def ok32432():
+        print("\n▛▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▜")
+        print("🔍 开始设备检测流程")
+        print(f"初始设备参数: device={device}, dtype={getattr(device, 'dtype', '未指定') if device else '未指定'}")
+
         if device is None:
-            # check weight and qweight (for GPTQ)
+            print("\n🔄 需要自动检测设备...")
+            detected = False
+            # 遍历可能的权重属性
             for weight_name in ("weight", "qweight"):
+                print(f"├─ 检查权重属性: {weight_name}")
                 weight = getattr(self.get_base_layer(), weight_name, None)
+                
                 if weight is not None:
+                    print(f"│  ├─ 找到有效权重: shape={weight.shape}")
                     device = weight.device
                     dtype = weight.dtype
+                    detected = True
+                    print(f"│  └─ 检测到设备: {device}, dtype={dtype}")
                     break
-            else:
-                # no break encountered: could not determine the device
+                else:
+                    print(f"│  └─ 未找到属性 {weight_name}")
+            
+            if not detected:
+                print("\n❌ 错误: 无法自动检测设备")
+                print("可能原因:")
+                print("- 基础层缺少weight/qweight属性")
+                print("- 使用了不支持的量化格式")
+                print("▛▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▜")
                 return
+        else:
+            print("\n✅ 使用用户指定设备")
+            print(f"设备: {device}, dtype={dtype}")
 
+        # 元设备处理
+        print("\n⚙️ 创建元设备")
         meta = torch.device("meta")
+        print(f"元设备状态: {meta} (用于初始化)")
+        
+
 
         # loop through all potential adapter layers and move them to the device of the base layer; be careful to only
         # move this specific adapter to the device, as the other adapters could be on different devices
         # see #1639
-        for adapter_layer_name in self.adapter_layer_names + self.other_param_names:
-            adapter_layer = getattr(self, adapter_layer_name, None)
-            if not isinstance(adapter_layer, (nn.ModuleDict, nn.ParameterDict, BufferDict)):
-                continue
-            if adapter_name not in adapter_layer:
-                continue
-            if any(p.device == meta for p in adapter_layer.parameters()):
-                continue
+    # def ok2423():
+        print("\n===== 开始遍历所有适配器层和其他参数层 =====")
+        for idx, adapter_layer_name in enumerate(self.adapter_layer_names + self.other_param_names):
+            print(f"\n-- 第 {idx+1} 层处理: 名称='{adapter_layer_name}' --")
 
+            # 获取当前层对象
+            adapter_layer = getattr(self, adapter_layer_name, None)
+            print(f"  获取属性: {adapter_layer_name} = {type(adapter_layer)}")
+
+            # 检查是否为容器类型
+            if not isinstance(adapter_layer, (nn.ModuleDict, nn.ParameterDict, BufferDict)):
+                print(f"  ⚠️ 跳过: {adapter_layer_name} 不是 ModuleDict/ParameterDict/BufferDict")
+                continue
+            else:
+                print(f"  ✅ 类型验证通过: 是有效容器")
+
+            # 检查是否存在目标适配器
+            if adapter_name not in adapter_layer:
+                print(f"  ⚠️ 跳过: 适配器 '{adapter_name}' 不存在于 {adapter_layer_name}")
+                continue
+            else:
+                print(f"  ✅ 适配器存在: {adapter_name} ∈ {adapter_layer_name}")
+
+            # 检查是否包含meta设备参数（未初始化）
+            has_meta = any(p.device == meta for p in adapter_layer.parameters())
+            if has_meta:
+                print(f"  ⚠️ 跳过: 检测到未初始化（meta设备）参数")
+                continue
+            else:
+                print(f"  ✅ 参数已初始化: 无meta设备参数")
+
+            # 获取权重并移动设备
+            # weight = adapter_layer[adapter_name]
+            # print(f"  权重信息: device={weight.device}, dtype={weight.dtype}")
+
+            # 根据数据类型处理移动逻辑
             if weight.dtype.is_floating_point or weight.dtype.is_complex:
+                print(f"  🚀 移动适配器 '{adapter_name}' -> device={device}, dtype={dtype}")
                 adapter_layer[adapter_name] = adapter_layer[adapter_name].to(device, dtype=dtype)
             else:
+                print(f"  🚀 移动适配器 '{adapter_name}' -> device={device}（保持原dtype）")
                 adapter_layer[adapter_name] = adapter_layer[adapter_name].to(device)
+
+        #     print(f"  移动后状态: device={adapter_layer[adapter_name].device}, dtype={adapter_layer[adapter_name].dtype}")
+        
+        # print("\n===== 所有层处理完成 =====")
+
 
 
 def _find_minimal_target_modules(

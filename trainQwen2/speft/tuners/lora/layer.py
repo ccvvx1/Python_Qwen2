@@ -259,6 +259,7 @@ class LoraLayer(BaseTunerLayer):
         print(f"LoRA_B: r={r} → out_features={self.out_features} (bias={lora_bias})")
         self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
         self.lora_bias[adapter_name] = lora_bias
+        print("使用的偏差详情：", lora_bias)
 
         # 计算缩放因子
         print("\n⚖️ 计算缩放因子:")
@@ -336,29 +337,72 @@ class LoraLayer(BaseTunerLayer):
 
 
     def reset_lora_parameters(self, adapter_name, init_lora_weights):
+    # def ok3223():
+        print("\n▛▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▜")
+        print(f"🔧 开始权重初始化 - 适配器: {adapter_name}")
+        print(f"▙ 初始化方法: {init_lora_weights} {'(禁用)' if init_lora_weights is False else ''} ▟")
+
         if init_lora_weights is False:
+            print("\n🛑 检测到初始化禁用标志，跳过初始化流程")
             return
 
+        # 线性层初始化
         if adapter_name in self.lora_A.keys():
+            print("\n⚙️ 初始化线性层参数:")
+            print(f"LoRA_A形状: {self.lora_A[adapter_name].weight.shape}")
+            print(f"LoRA_B形状: {self.lora_B[adapter_name].weight.shape}")
+
             if init_lora_weights is True:
-                # initialize A the same way as the default for nn.Linear and B to zero
-                # https://github.com/microsoft/LoRA/blob/a0a92e0f26c067cf94747bdbf1ce73793fa44d19/loralib/layers.py#L124
-                nn.init.kaiming_uniform_(self.lora_A[adapter_name].weight, a=math.sqrt(5))
-            elif init_lora_weights.lower() == "gaussian":
-                nn.init.normal_(self.lora_A[adapter_name].weight, std=1 / self.r[adapter_name])
+                print("├─ [默认] 使用Kaiming均匀初始化A，零初始化B")
+                nn.init.kaiming_uniform_(
+                    self.lora_A[adapter_name].weight, 
+                    a=math.sqrt(5)
+                )
+                print(f"│  ├─ Kaiming均匀初始化参数: a={math.sqrt(5):.4f}")
+                
+            elif isinstance(init_lora_weights, str) and init_lora_weights.lower() == "gaussian":
+                std = 1 / self.r[adapter_name]
+                print(f"├─ [高斯] 正态分布初始化A (std={std:.4f})")
+                nn.init.normal_(
+                    self.lora_A[adapter_name].weight,
+                    std=std
+                )
+                
             else:
-                raise ValueError(f"Unknown initialization {init_lora_weights=}")
+                error_msg = f"未知初始化方法: {init_lora_weights}"
+                print(f"\n❌ 错误: {error_msg}")
+                raise ValueError(error_msg)
+
+            # 初始化B矩阵
+            print("├─ 零初始化B矩阵权重")
             nn.init.zeros_(self.lora_B[adapter_name].weight)
+            
             if self.lora_bias[adapter_name]:
+                print("└─ 零初始化B矩阵偏置")
                 nn.init.zeros_(self.lora_B[adapter_name].bias)
+            else:
+                print("└─ 未启用B矩阵偏置")
+
+        # 嵌入层初始化
         if adapter_name in self.lora_embedding_A.keys():
-            # Initialize A to zeros and B the same way as the default for nn.Embedding, see:
-            # https://github.com/microsoft/LoRA/blob/4c0333854cb905966f8cc4e9a74068c1e507c7b7/loralib/layers.py#L59-L60
+            print("\n🔠 初始化嵌入层参数:")
+            print(f"嵌入A形状: {self.lora_embedding_A[adapter_name].shape}")
+            print(f"嵌入B形状: {self.lora_embedding_B[adapter_name].shape}")
+
+            print("├─ 零初始化嵌入矩阵A")
             nn.init.zeros_(self.lora_embedding_A[adapter_name])
+            
+            print("├─ 正态分布初始化嵌入矩阵B")
             nn.init.normal_(self.lora_embedding_B[adapter_name])
+            
             if self.lora_bias[adapter_name]:
-                # embeddings are not supported at the moment, but still adding this for consistency
+                print("└─ 警告: 嵌入层偏置初始化（实验性支持）")
                 nn.init.zeros_(self.lora_embedding_B[adapter_name].bias)
+            else:
+                print("└─ 未启用嵌入层偏置")
+
+        print("\n✅ 权重初始化完成 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▟\n")
+
 
     def olora_init(self, adapter_name):
         base_layer = self.get_base_layer()
