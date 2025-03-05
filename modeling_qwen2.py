@@ -262,6 +262,7 @@ class Qwen2Attention(nn.Module):
         if self.layer_idx == 0:
             print("\n[Q/K/V 投影]")
             print(f"  q_proj 权重形状: {self.q_proj.weight.shape}")  # 可选：打印投影层参数
+        # 调用新的层进行模型输出
         query_states = self.q_proj(hidden_states)
         if self.layer_idx == 0:
             print(f"  q_proj 原始输出: {query_states.shape} -> [batch, seq_len, proj_dim]")
