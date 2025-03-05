@@ -403,9 +403,36 @@ class ModulesToSaveWrapper(torch.nn.Module):
 
 
 def _get_submodules(model, key):
-    parent = model.get_submodule(".".join(key.split(".")[:-1]))
-    target_name = key.split(".")[-1]
+
+    print("\n🔧 开始解析模块层级结构")
+    print(f"📌 输入模块路径: '{key}'")
+
+    # 分解模块路径
+    print("\n🔍 分解模块路径:")
+    key_parts = key.split(".")
+    parent_path = ".".join(key_parts[:-1]) if len(key_parts) > 1 else ""
+    target_name = key_parts[-1]
+    print(f"   🔗 分解结果 → 父模块路径: '{parent_path}', 目标模块名称: '{target_name}'")
+    print(f"   📊 路径深度: {len(key_parts)}层 (示例: {key_parts[:3]}...)")
+
+    # 获取父模块
+    print("\n🔼 获取父模块:")
+    parent = model.get_submodule(parent_path) if parent_path else model
+    print(f"   ✅ 父模块类型: {type(parent).__name__}")
+    print(f"   📍 父模块路径: '{parent_path}'" if parent_path else "   📍 根模块(无父模块)")
+
+    # 获取目标模块
+    print("\n🔽 获取目标模块:")
     target = model.get_submodule(key)
+    print(f"   ✅ 目标模块类型: {type(target).__name__}")
+    print(f"   📌 完整路径: model.{key}")
+
+    print("\n🎯 解析完成，返回模块结构:")
+    print(f"   🏷️ parent: {parent.__class__.__name__}")
+    print(f"   🎯 target: {target.__class__.__name__}")
+    print(f"   📛 target_name: '{target_name}'")
+    print("="*60)
+    
     return parent, target, target_name
 
 

@@ -181,15 +181,34 @@ class LoraModel(BaseTuner):
         parent,
         current_key,
     ):
+    #  def ok32432():
+        print("\n🚀 开始配置LoRA层参数")
+        print(f"📌 当前处理模块路径: {current_key or '未指定'}")
+
+        # 空键检查
         if current_key is None:
+            print("❌ 致命错误: current_key参数未传入")
+            print("🛑 可能原因:")
+            print("1. 模块路径生成逻辑错误")
+            print("2. 模型结构解析异常")
             raise ValueError("Current Key shouldn't be `None`")
 
-        # Regexp matching - Find key which matches current target_name in patterns provided
+        # 正则匹配获取配置键
+        print("\n🔍 执行正则模式匹配:")
         r_key = get_pattern_key(lora_config.rank_pattern.keys(), current_key)
         alpha_key = get_pattern_key(lora_config.alpha_pattern.keys(), current_key)
+        print(f"   🎯 rank模式键: {r_key} (可用模式: {list(lora_config.rank_pattern.keys())})")
+        print(f"   α模式键: {alpha_key} (可用模式: {list(lora_config.alpha_pattern.keys())})")
+
+        # 获取动态rank/alpha值
         r = lora_config.rank_pattern.get(r_key, lora_config.r)
         alpha = lora_config.alpha_pattern.get(alpha_key, lora_config.lora_alpha)
+        print(f"\n📊 动态参数计算:")
+        print(f"   🔢 rank = {r} ({'默认' if r_key not in lora_config.rank_pattern else '模式匹配'})")
+        print(f"   α系数 = {alpha} ({'默认' if alpha_key not in lora_config.alpha_pattern else '模式匹配'})")
 
+        # 准备基础参数
+        print("\n📦 组装LoRA配置参数:")
         kwargs = {
             "r": r,
             "lora_alpha": alpha,
@@ -203,24 +222,55 @@ class LoraModel(BaseTuner):
             "loaded_in_8bit": getattr(self.model, "is_loaded_in_8bit", False),
             "loaded_in_4bit": getattr(self.model, "is_loaded_in_4bit", False),
         }
-        # for torchao merging, we need the get_apply_tensor_subclass from the quantization config
+        print("✅ 基础参数配置完成:")
+        for k, v in kwargs.items():
+            print(f"   {k:20} = {v}")
+
+        # 处理Tensor子类配置
+        print("\n🔧 配置Tensor子类方法:")
         try:
             kwargs["get_apply_tensor_subclass"] = operator.attrgetter(
                 "hf_quantizer.quantization_config.get_apply_tensor_subclass"
             )(self.model)
+            print(f"✅ 成功获取Tensor子类应用方法: {kwargs['get_apply_tensor_subclass']}")
         except AttributeError:
-            pass
+            print("⚠️ 未找到hf_quantizer配置，跳过Tensor子类设置")
 
+        # 量化配置扫描
+        print("\n📡 扫描量化配置:")
         quant_methods = ["gptq", "aqlm", "awq"]
         for quant_method in quant_methods:
+            print(f"   🔎 检查{quant_method.upper()}量化...", end="")
             quantization_config = get_quantization_config(self.model, method=quant_method)
             if quantization_config is not None:
                 kwargs[f"{quant_method}_quantization_config"] = quantization_config
+                print(f"✅ 检测到配置 | 版本: {quantization_config.__class__.__name__}")
+            else:
+                print("❌ 未找到")
 
+
+    # def ok3543():
         # note: AdaLoraLayer is a subclass of LoraLayer, we need to exclude it
         from speft.tuners.adalora import AdaLoraLayer
 
-        if isinstance(target, LoraLayer) and not isinstance(target, AdaLoraLayer):
+    # def ok3543():
+        print("\n🚀 开始执行模块更新/替换流程")
+        print(f"📌 当前适配器: {adapter_name}")
+        print(f"🔧 目标模块类型: {type(target).__name__}")
+
+        # 检查模块类型条件
+        is_lora_layer = isinstance(target, LoraLayer)
+        is_adalora = isinstance(target, AdaLoraLayer)
+        print(f"\n🔍 模块类型验证 - LoraLayer: {is_lora_layer} | 非AdaLora: {not is_adalora}")
+        
+        if is_lora_layer and not is_adalora:
+            print("✅ 符合层更新条件，执行参数更新")
+            print(f"🔄 更新参数列表: [r={r}, alpha={alpha}, dropout={lora_config.lora_dropout}]")
+            print(f"⚙️ 初始化方式: {lora_config.init_lora_weights}")
+            print(f"🌀 高级选项: use_rslora={lora_config.use_rslora}, use_dora={lora_config.use_dora}")
+
+            # 记录更新前参数状态
+            pre_params = sum(p.numel() for p in target.parameters())
             target.update_layer(
                 adapter_name,
                 r,
@@ -231,12 +281,42 @@ class LoraModel(BaseTuner):
                 use_dora=lora_config.use_dora,
                 lora_bias=lora_config.lora_bias,
             )
+            # 更新后参数对比
+            post_params = sum(p.numel() for p in target.parameters())
+            print(f"📊 参数量变化: {pre_params} → {post_params} (+{post_params - pre_params})")
         else:
+            print("🛠️ 需要创建新模块替换原模块")
+            print(f"📦 使用配置创建新模块: { {k:v for k,v in kwargs.items() if not k.endswith('_config')} }")
+            
             new_module = self._create_new_module(lora_config, adapter_name, target, **kwargs)
+            print(f"🎯 新模块类型: {type(new_module).__name__}")
+
+            # 检查激活状态
+            print(f"\n🔍 检查适配器激活状态: {adapter_name} in {self.active_adapters}")
             if adapter_name not in self.active_adapters:
-                # adding an additional adapter: it is not automatically trainable
+                print("⚠️ 新适配器未激活，冻结参数")
                 new_module.requires_grad_(False)
+                frozen_params = sum(p.numel() for p in new_module.parameters())
+                print(f"❄️ 冻结参数数量: {frozen_params}")
+            else:
+                print("✅ 保持新模块可训练状态")
+
+            # 执行模块替换
+            print(f"\n🔄 开始模块替换操作")
+            print(f"父模块: {parent.__class__.__name__}")
+            print(f"目标属性名: {target_name}")
+            print(f"原模块类型: {type(target).__name__} → 新类型: {type(new_module).__name__}")
+
             self._replace_module(parent, target_name, new_module, target)
+            
+            # 替换后验证
+            replaced_module = getattr(parent, target_name, None)
+            print(f"🔍 替换验证: {replaced_module is not None and replaced_module == new_module}")
+            print(f"📌 新模块ID: {id(replaced_module)}")
+
+        print("\n🎉 模块处理完成")
+        print("="*60)
+
 
     def _replace_module(self, parent, child_name, new_module, child):
         setattr(parent, child_name, new_module)
