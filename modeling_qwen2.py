@@ -247,38 +247,65 @@ class Qwen2Attention(nn.Module):
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        input_shape = hidden_states.shape[:-1]
+    # def ok234():
+        print(f"\n===== 进入层 {self.layer_idx} 的注意力计算 =====") if self.layer_idx == 0 else None
 
+        # 输入形状解析
+        input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
         if self.layer_idx == 0:
-            print("  输入的原始形状：", hidden_states.shape)
-            print("  输入形状：", input_shape)
-            print("  隐藏层形状：", hidden_shape)
+            print("[输入解析]")
+            print(f"  原始输入形状: {hidden_states.shape} -> [batch, seq_len, hidden_dim]")
+            print(f"  重组后的隐藏形状: {hidden_shape} -> [batch, seq_len, num_heads, head_dim]")
 
-        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        # 投影层计算（Q/K/V）
         if self.layer_idx == 0:
-            print("  处理过的q形状：", query_states.shape)
+            print("\n[Q/K/V 投影]")
+            print(f"  q_proj 权重形状: {self.q_proj.weight.shape}")  # 可选：打印投影层参数
+        query_states = self.q_proj(hidden_states)
+        if self.layer_idx == 0:
+            print(f"  q_proj 原始输出: {query_states.shape} -> [batch, seq_len, proj_dim]")
+        query_states = query_states.view(hidden_shape).transpose(1, 2)
+        if self.layer_idx == 0:
+            print(f"  重组&转置后 Q: {query_states.shape} -> [batch, num_heads, seq_len, head_dim]")
+
         key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
         if self.layer_idx == 0:
-            print("  处理过的k形状：", key_states.shape)
+            print(f"  重组&转置后 K: {key_states.shape} (同 Q 形状)")
+
         value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
         if self.layer_idx == 0:
-            print("  处理过的v形状：", value_states.shape)
+            print(f"  重组&转置后 V: {value_states.shape} (同 Q 形状)")
 
+        # RoPE 位置编码
         cos, sin = position_embeddings
+        if self.layer_idx == 0:
+            print("\n[位置编码]")
+            print(f"  cos/sin 形状: {cos.shape} -> [1, seq_len, head_dim]")
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
         if self.layer_idx == 0:
-            print("  旋转处理过的q形状：", query_states.shape)
-            print("  旋转处理过的k形状：", key_states.shape)
+            print(f"  应用 RoPE 后 Q: {query_states.shape} (形状不变)")
+            print(f"  应用 RoPE 后 K: {key_states.shape} (形状不变)")
 
+        # KV缓存处理
         if past_key_value is not None:
-            # sin and cos are specific to RoPE models; cache_position needed for the static cache
-            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             if self.layer_idx == 0:
-                print("  缓冲位置：", cache_position)
-            # q作为查询值，不需要保存到kv缓冲
-            key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
+                print("\n[KV缓存更新]")
+                print(f"  输入缓存位置: {cache_position} -> 当前序列位置")
+            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+            key_states, value_states = past_key_value.update(
+                key_states, value_states, self.layer_idx, cache_kwargs
+            )
+            if self.layer_idx == 0:
+                print(f"  更新后 K 缓存形状: {key_states.shape} -> [batch, num_heads, cache_len, head_dim]")
+                print(f"  更新后 V 缓存形状: {value_states.shape} (同 K 形状)")
 
+        # print(f"===== 层 {self.layer_idx} 注意力计算完成 =====") if self.layer_idx == 0 else None
+    # def ok2342():
+        if self.layer_idx == 0:
+            print("\n===== 注意力机制配置检查 =======")
+
+        # 滑动窗口配置检查
         sliding_window = None
         if (
             self.config.use_sliding_window
@@ -286,22 +313,32 @@ class Qwen2Attention(nn.Module):
             and self.layer_idx >= self.config.max_window_layers
         ):
             sliding_window = self.config.sliding_window
+            if self.layer_idx == 0:
+                print(f"[滑动窗口] 已启用 (window_size={sliding_window}), 触发条件: layer_idx({self.layer_idx}) >= max_window_layers({self.config.max_window_layers})")
+        else:
+            if self.layer_idx == 0:
+                print(f"[滑动窗口] 未启用: use_sliding_window={self.config.use_sliding_window}, sliding_window={getattr(self.config, 'sliding_window', None)}, layer_idx={self.layer_idx}")
 
-        # 通过数学计算qkv关系
+        # 注意力实现类型选择
         attention_interface: Callable = eager_attention_forward
         if self.layer_idx == 0:
-            print("  注意力机制类型：", self.config._attn_implementation)
+            print(f"\n[注意力实现] 配置类型: {self.config._attn_implementation}")
+
+        # 检查是否需要回退到 Eager 模式
         if self.config._attn_implementation != "eager":
             if self.config._attn_implementation == "sdpa" and kwargs.get("output_attentions", False):
-                logger.warning_once(
-                    "`torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to "
-                    'eager attention. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
-                )
+                if self.layer_idx == 0:
+                    print("  ⚠️ 强制回退到 Eager 模式: 因为 `output_attentions=True` 与 SDPA 不兼容")
+                logger.warning_once("...")  # 原警告逻辑保持不变
             else:
-                # attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-                attention_interface = ssdpa_attention_forward
-                # sdpa_attention_forward
-                # print("注意力函数：", attention_interface)
+                attention_interface = ssdpa_attention_forward  # 或其他实现如 sdpa_attention_forward
+                if self.layer_idx == 0:
+                    print(f"  ✅ 使用高效实现: {self.config._attn_implementation}")
+
+        if self.layer_idx == 0:
+            print(f"  最终选择的注意力函数: {attention_interface.__name__}")
+            print("================================")
+
 
 
         # 通过数学计算qkv关系，因为缓冲包括其他输入文字，所以可以完成整个上下文的细节关注
