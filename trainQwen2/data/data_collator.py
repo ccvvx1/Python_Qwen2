@@ -948,6 +948,10 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
                 print("A:因为pytorch自带计算交叉熵的函数的忽略值默认是-100")
                 print("Q:掩码-100在交叉熵的计算好处？")
                 print("A:掩码-100在交叉熵计算接近0，可以忽略，不需要注意")
+                print("Q:长度越长，学习的知识越多，所以最大长度越长越好？")
+                print("A:长度最好不要太长，容易梯度爆炸")
+                print("Q:deepseek为了防止梯度爆炸，所以也是采用1024？")
+                print("A:逐步递进，4k->32k->128k，让模型知识根据显卡能力逐步提升学习难度")
                 import sys, os
                 print(f"\nQA跳转 File \"{os.path.abspath(__file__)}\", line {sys._getframe().f_lineno}")
 

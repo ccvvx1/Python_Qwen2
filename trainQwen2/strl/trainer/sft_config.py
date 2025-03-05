@@ -95,6 +95,7 @@ class SFTConfig(TrainingArguments):
         default=None,
         metadata={"help": "Number of processes to use for processing the dataset."},
     )
+
     max_seq_length: Optional[int] = field(
         default=1024,
         metadata={
