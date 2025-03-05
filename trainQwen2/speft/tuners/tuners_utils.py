@@ -630,7 +630,7 @@ class BaseTuner(nn.Module, ABC):
                 
                 with ctx():
                     print(f"   🛠️ 执行适配器创建与替换...")
-                    self._create_and_replace(peft_config1, adapter_name, target, target_name, parent, current_key=key)
+                    self._create_and_replace(peft_config, adapter_name, target, target_name, parent, current_key=key)
                     print(f"   ✅ {target_name} 适配器注入完成")
 
 
