@@ -200,7 +200,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
             # 获取适配器模型类
             cls = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type]
-            print(f"   🧩 选择PEFT模型类: {cls.__name__}")
+            print(f"   🧩 选择PEFT模型类: {cls.__name__} 详细信息：{cls}")
 
             # 内存优化上下文选择
             ctx = init_empty_weights if low_cpu_mem_usage else nullcontext

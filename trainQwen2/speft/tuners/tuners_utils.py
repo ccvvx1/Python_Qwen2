@@ -158,33 +158,82 @@ class BaseTuner(nn.Module, ABC):
         adapter_name: str,
         low_cpu_mem_usage: bool = False,
     ) -> None:
+    # def ok1232():
+        print("\n🚀 开始初始化PEFT适配器管理器")
+        print(f"📌 输入参数 - 适配器名称: {adapter_name}, 低内存模式: {low_cpu_mem_usage}")
+
+        # 基类初始化
         super().__init__()
+        print("✅ 完成基类(torch.nn.Module)初始化")
 
+        # 模型引用绑定
         self.model = model
-        self.targeted_module_names: list[str] = []
+        print(f"🔗 绑定目标模型: {model.__class__.__name__}")
 
-        # For advanced developers, if you want to attach multiple adapters to your
-        # model, just add a `peft_config` dict attribute to your model.
+        # 初始化目标模块列表
+        self.targeted_module_names: list[str] = []
+        print("📋 初始化目标模块列表: []")
+
+        # 检查是否已有peft_config属性
+        print("\n🔍 检查现有peft_config配置")
         if not hasattr(self, "peft_config"):
-            self.peft_config = {adapter_name: peft_config} if isinstance(peft_config, PeftConfig) else peft_config
-        else:
-            logger.info(
-                "Already found a `peft_config` attribute in the model. This will lead to having multiple adapters"
-                " in the model. Make sure to know what you are doing!"
-            )
+            print("🆕 未检测到peft_config属性，创建新配置")
             if isinstance(peft_config, PeftConfig):
+                self.peft_config = {adapter_name: peft_config}
+                print(f"📦 创建单适配器配置 | 类型: {peft_config.peft_type.name}")
+            else:
+                self.peft_config = peft_config
+                print(f"📚 加载多适配器配置 | 包含{len(peft_config)}个适配器")
+        else:
+            print("⚠️ 警告：检测到已存在peft_config属性，将追加新配置！")
+            logger.info("已有peft_config属性，可能包含多个适配器")
+            if isinstance(peft_config, PeftConfig):
+                print(f"➕ 添加新适配器配置 [{adapter_name}]")
                 self.peft_config[adapter_name] = peft_config
             else:
-                # user is adding a dict of PeftConfigs
+                print(f"🔄 合并配置字典 | 新增{len(peft_config)}个适配器")
                 self.peft_config.update(peft_config)
+            print(f"🔢 当前配置总数: {len(self.peft_config)}")
 
+        # 设置当前激活适配器
+        print(f"\n🎯 设置活动适配器: {adapter_name}")
         self.active_adapter: str | list[str] = adapter_name
-        self._pre_injection_hook(self.model, self.peft_config[adapter_name], adapter_name)
-        if peft_config != PeftType.XLORA or peft_config[adapter_name] != PeftType.XLORA:
-            self.inject_adapter(self.model, adapter_name, low_cpu_mem_usage=low_cpu_mem_usage)
+        print(f"   🔄 当前active_adapter类型: {type(self.active_adapter).__name__}")
 
-        # Copy the peft_config in the injected model.
+        # 执行前置注入钩子
+        print("\n⚡ 执行前置注入钩子函数")
+        print(f"   🔧 调用_pre_injection_hook方法 | 适配器: {adapter_name}")
+        self._pre_injection_hook(self.model, self.peft_config[adapter_name], adapter_name)
+        print("   ✅ 前置钩子执行完成")
+
+        # 条件判断是否XLORA类型
+        print("\n🔍 检查PEFT类型是否为XLORA")
+        is_xlora = False
+        if hasattr(peft_config, "peft_type"):
+            is_xlora = peft_config.peft_type == PeftType.XLORA
+            print(f"   🔎 当前类型: {peft_config.peft_type.name} | XLORA: {is_xlora}")
+        elif adapter_name in self.peft_config:
+            cfg = self.peft_config[adapter_name]
+            is_xlora = cfg.peft_type == PeftType.XLORA
+            print(f"   🔎 配置中[{adapter_name}]类型: {cfg.peft_type.name} | XLORA: {is_xlora}")
+
+        # 非XLORA类型执行适配器注入
+        if not is_xlora:
+            print("\n🛠️ 开始注入适配器到模型")
+            print(f"   ⚙️ 调用inject_adapter方法 | 低内存模式: {low_cpu_mem_usage}")
+            self.inject_adapter(self.model, adapter_name, low_cpu_mem_usage=low_cpu_mem_usage)
+            print("   ✅ 适配器注入完成")
+        else:
+            print("\n⏭️ 跳过XLORA类型适配器注入")
+
+        # 同步配置到模型属性
+        print("\n📥 同步配置到模型属性")
         self.model.peft_config = self.peft_config
+        print(f"   ✅ 已设置model.peft_config | 包含适配器: {list(self.peft_config.keys())}")
+
+        print("\n🎉 PEFT适配器管理器初始化完成！")
+        print("="*60)
+
 
     @property
     def active_adapters(self) -> list[str]:
@@ -421,31 +470,66 @@ class BaseTuner(nn.Module, ABC):
                 Create empty adapter weights on meta device. Useful to speed up the loading process.
 
         """
+    # def ok09():
+        print("\n🚀 开始执行适配器注入流程")
+        print(f"📌 当前适配器: {adapter_name}")
+
+        # 获取适配器配置
         peft_config = self.peft_config[adapter_name]
+        # 加载配置 - 类型: LORA (目标模块: {'k_proj', 'q_proj', 'v_proj'})
+        print(f"🔧 加载配置 - 类型: {peft_config.peft_type.name} (目标模块: {getattr(peft_config, 'target_modules', '未指定')})")
+        
         excluded_modules = []
         unmatched_modules = []
-        # Note: If possible, all checks should be performed *at the start of this method*.
-        # This way, we can raise early if something goes wrong, without leaving the model
-        # in a bad (half-initialized) state.
-        self._check_new_adapter_config(peft_config)
+        print(f"📦 初始化记录容器 - 排除模块: {excluded_modules}, 未匹配模块: {unmatched_modules}")
 
+        # 配置安全检查
+        print("\n🔒 执行配置安全检查...")
+        self._check_new_adapter_config(peft_config)
+        print("✅ 安全检查通过: 配置有效性验证完成")
+
+        # 检测是否需要特殊模块保存
+        print("\n🔍 检测modules_to_save配置")
         _check_for_modules_to_save = getattr(peft_config, "modules_to_save", None) is not None
         _has_modules_to_save = False
+        print(f"   🎯 存在需要保存的模块: {_check_for_modules_to_save}")
 
+        # 获取模型配置元数据
+        print("\n🛠️ 准备模型结构元数据")
         model_config = self.get_model_config(model)
-
+        print(f"   📄 模型配置类型: {type(model_config).__name__}")
+        
+        # 配置预处理
+        print("⚙️ 对齐适配器配置与模型架构...")
         peft_config = self._prepare_adapter_config(peft_config, model_config)
+        print(f"   ✅ 更新后配置参数: target_modules={peft_config.target_modules}")
 
+        # 模型结构准备
+        print("\n🏗️ 修改模型结构以支持适配器")
         self._prepare_model(peft_config, model)
+        print("   ✅ 模型结构调整完成 | 添加适配器占位符")
+
+        # 生成全模块列表
+        print("\n📋 扫描模型模块层级结构...")
         key_list = [key for key, _ in model.named_modules()]
+        print(f"   🎯 发现{len(key_list)}个可访问模块 (示例: {key_list[:2]}...)")
 
+        # 虚拟适配器处理
+        print("\n🔍 检查虚拟适配器配置")
         uses_dummy_target_modules = getattr(peft_config, "target_modules", None) == DUMMY_TARGET_MODULES
+        print(f"   🕶️ 是否为虚拟适配器: {uses_dummy_target_modules}")
         if uses_dummy_target_modules:
-            # dummy adapter, we allow not matching any module
+            print("   ⚠️ 检测到虚拟目标模块(Dummy)，清空模块匹配列表")
             key_list = []
+            print("   🌀 当前key_list:", key_list)
 
-        # update peft_config.target_modules if required
+        # 动态扩展目标模块
+        print("\n📈 动态扩展目标模块列表")
+        original_targets = peft_config.target_modules.copy() if peft_config.target_modules else []
         peft_config = _maybe_include_all_linear_layers(peft_config, model)
+        print(f"   🔄 模块列表变化: {original_targets} → {peft_config.target_modules}")
+        print("="*60)
+
 
         # This is an optimization to reduce the number of entries in the target_modules list. The reason is that in some
         # circumstances, target_modules can contain hundreds of entries. Since each target module is checked against
@@ -456,113 +540,274 @@ class BaseTuner(nn.Module, ABC):
         # quite a lot. See: https://github.com/huggingface/diffusers/issues/9297
         # As there is a small chance for undiscovered bugs, we apply this optimization only if the list of
         # target_modules is sufficiently big.
+    #  def ok34():
+        print("\n🚀 开始执行适配器注入优化流程")
+        print(f"📌 当前适配器: {adapter_name}")
+        print(f"🔍 初始目标模块数量: {len(peft_config.target_modules) if peft_config.target_modules else 0}")
+
+        # 目标模块优化逻辑
         if (
             isinstance(peft_config.target_modules, (list, set))
             and len(peft_config.target_modules) >= MIN_TARGET_MODULES_FOR_OPTIMIZATION
         ):
+            print("\n⚡ 检测到可优化目标模块配置")
+            print(f"   📊 当前模块数({len(peft_config.target_modules)}) ≥ 阈值({MIN_TARGET_MODULES_FOR_OPTIMIZATION})")
+
+            # 生成非目标模块列表
             names_no_target = [
                 name
                 for name in key_list
                 if not any((name == suffix) or name.endswith("." + suffix) for suffix in peft_config.target_modules)
             ]
-            new_target_modules = _find_minimal_target_modules(peft_config.target_modules, names_no_target)
-            if len(new_target_modules) < len(peft_config.target_modules):
-                peft_config.target_modules = new_target_modules
+            print(f"   🎯 发现{len(names_no_target)}个非目标模块 (示例: {names_no_target[:2]}...)")
 
-        for key in key_list:
+            # 寻找最小化目标模块
+            print("🔎 执行最小化模块搜索算法...")
+            new_target_modules = _find_minimal_target_modules(peft_config.target_modules, names_no_target)
+            print(f"   🌀 优化结果: {len(new_target_modules)}个模块 → 原{len(peft_config.target_modules)}个")
+
+            if len(new_target_modules) < len(peft_config.target_modules):
+                reduction = len(peft_config.target_modules) - len(new_target_modules)
+                print(f"   ✅ 成功减少{reduction}个冗余模块")
+                peft_config.target_modules = new_target_modules
+                print(f"   📝 更新后目标模块列表: {new_target_modules[:3]}...")
+            else:
+                print("   ⚠️ 未找到可优化目标模块，保持原配置")
+
+        print("\n🔧 开始逐模块处理流程")
+        for idx, key in enumerate(key_list):
             if not key:
+                print(f"   ❌ 跳过空模块路径 (索引:{idx})")
                 continue
-            # Check for modules_to_save in case
+
+            print(f"\n🔍 处理模块 [{idx+1}/{len(key_list)}]: {key}")
+
+            # 检查是否需要保存模块
             if _check_for_modules_to_save and any(
                 key.endswith(f"{module_to_save}") for module_to_save in peft_config.modules_to_save
             ):
-                # Optionally set the modules to save
+                print(f"   🎯 检测到需保存模块: {key}")
                 parent, target, target_name = _get_submodules(model, key)
+                print(f"   🧩 获取父模块: {type(parent).__name__}, 目标: {type(target).__name__}")
 
                 if not isinstance(target, ModulesToSaveWrapper):
+                    print("   🆕 创建新模块保存包装器")
                     new_module = ModulesToSaveWrapper(target, adapter_name)
                     setattr(parent, target_name, new_module)
+                    print(f"   ✅ 已替换: {parent.__class__.__name__}.{target_name}")
                 else:
+                    print("   🔄 更新现有包装器")
                     target.update(adapter_name)
+                    print(f"   📌 当前适配器列表: {target.adapters}")
 
                 _has_modules_to_save = True
+                print("   ⏩ 跳过适配器注入，继续下一个模块")
                 continue
 
+            # 检查模块匹配状态
+            print("🔎 执行模块匹配检查...")
             result = self._check_target_module_exists(peft_config, key)
+            
             if isinstance(result, _ExcludedModule):
+                print(f"   🚫 模块被排除 | 原因: {result.reason}")
                 excluded_modules.append(key)
+                print(f"   📥 添加到排除列表 (当前总数:{len(excluded_modules)})")
             elif not result:
+                print("   ❌ 模块未匹配到任何目标模式")
                 unmatched_modules.append(key)
+                print(f"   📥 添加到未匹配列表 (当前总数:{len(unmatched_modules)})")
             else:
+                print("   ✅ 模块匹配成功")
                 self.targeted_module_names.append(key)
+                print(f"   📥 添加到目标列表 (当前总数:{len(self.targeted_module_names)})")
+
+                # 执行适配器注入
                 parent, target, target_name = _get_submodules(model, key)
+                print(f"   🧩 获取模块层级: {parent.__class__.__name__} → {target_name}")
+                
                 ctx = init_empty_weights if low_cpu_mem_usage else nullcontext
+                print(f"   ⚡ 注入上下文: {'低内存模式' if low_cpu_mem_usage else '普通模式'}")
+                
                 with ctx():
+                    print(f"   🛠️ 执行适配器创建与替换...")
                     self._create_and_replace(peft_config, adapter_name, target, target_name, parent, current_key=key)
+                    print(f"   ✅ {target_name} 适配器注入完成")
+
+
+    #  def ok43543():
+        print("\n🔍 开始执行适配器注入结果验证")
+        print(f"📊 模块统计 - 目标模块: {len(self.targeted_module_names)}个, 排除: {len(excluded_modules)}个, 未匹配: {len(unmatched_modules)}个")
+        print(f"🔧 虚拟适配器状态: {uses_dummy_target_modules}")
 
         if not self.targeted_module_names and not uses_dummy_target_modules:
+            print("\n❌ 严重错误: 未找到有效注入模块")
+            
             if excluded_modules and not unmatched_modules:
-                # All targeted modules were excluded
-                raise ValueError(
+                # Case 1: 所有目标模块均被排除
+                print("💥 错误类型: 全模块排除")
+                print(f"   🚫 被排除模块示例: {excluded_modules[:3]}...")
+                print(f"   ⚙️ 当前排除规则: {peft_config.exclude_modules if hasattr(peft_config, 'exclude_modules') else '未设置'}")
+                
+                error_msg = (
                     "All modules were excluded. This is likely unintended. "
                     "Check your `target_modules` and `exclude_modules` configuration."
                 )
+                raise ValueError(error_msg)
+                
             elif not excluded_modules and unmatched_modules:
-                # None of the targeted modules matched
+                # Case 2: 所有目标模块未匹配
+                print("💥 错误类型: 全模块未匹配")
+                print(f"   🔍 目标模块配置: {peft_config.target_modules}")
+                print(f"   🔎 实际模块示例: {key_list[:5]}...")
+                print(f"   ❌ 未匹配模块示例: {unmatched_modules[:5]}...")
+                
                 error_msg = (
                     f"Target modules {peft_config.target_modules} not found in the base model. "
-                    f"Please check the target modules and try again."
+                    f"Common causes:\n"
+                    f"1. 模块名称拼写错误\n"
+                    f"2. 正则表达式模式不匹配\n"
+                    f"3. 模型架构与配置不兼容"
                 )
                 if peft_config.layers_to_transform is not None:
-                    error_msg += f" Note: You specified 'layers_to_transform': {peft_config.layers_to_transform}."
+                    print(f"   ⚙️ layers_to_transform: {peft_config.layers_to_transform}")
+                    error_msg += f"\nNote: You specified 'layers_to_transform': {peft_config.layers_to_transform}."
                 if peft_config.layers_pattern is not None:
-                    error_msg += f" You also specified 'layers_pattern': {peft_config.layers_pattern}."
+                    print(f"   ⚙️ layers_pattern: {peft_config.layers_pattern}")
+                    error_msg += f"\nYou also specified 'layers_pattern': {peft_config.layers_pattern}."
+                
+                print("🛑 建议调试步骤:")
+                print("1. 使用 model.named_modules() 检查实际模块名称")
+                print("2. 尝试更简单的目标模块列表（如单个明确模块名）")
+                print("3. 检查正则表达式是否包含转义字符问题")
                 raise ValueError(error_msg)
+                
             else:
-                # Some modules did not match and some matched but were excluded
+                # Case 3: 混合错误（部分排除+部分未匹配）
+                print("💥 错误类型: 复合错误")
+                print(f"   🚫 被排除模块: {len(excluded_modules)}个 (示例: {excluded_modules[:2]}...)")
+                print(f"   ❓ 未匹配模块: {len(unmatched_modules)}个 (示例: {unmatched_modules[:2]}...)")
+                print(f"   ⚙️ 完整目标模块列表: {peft_config.target_modules}")
+                
                 error_msg = (
-                    "No modules were targeted for adaptation. "
-                    "This might be caused by a combination of mismatched target modules and excluded modules. "
-                    "Please check your `target_modules` and `exclude_modules` configuration."
+                    "No modules were targeted for adaptation. Potential reasons:\n"
+                    "1. 目标模块被排除规则过滤\n"
+                    "2. 模块名称同时满足排除和未匹配条件\n"
+                    "3. 多层嵌套模块命名不匹配"
                 )
                 if peft_config.layers_to_transform is not None:
-                    error_msg += f" Note: You specified 'layers_to_transform': {peft_config.layers_to_transform}."
+                    print(f"   ⚙️ layers_to_transform: {peft_config.layers_to_transform}")
+                    error_msg += f"\nNote: You specified 'layers_to_transform': {peft_config.layers_to_transform}."
                 if peft_config.layers_pattern is not None:
-                    error_msg += f" You also specified 'layers_pattern': {peft_config.layers_pattern}."
+                    print(f"   ⚙️ layers_pattern: {peft_config.layers_pattern}")
+                    error_msg += f"\nYou also specified 'layers_pattern': {peft_config.layers_pattern}."
+                
+                print("🛑 建议调试步骤:")
+                print("1. 检查 exclude_modules 是否过于激进")
+                print("2. 使用 --debug 模式查看详细模块匹配过程")
+                print("3. 逐步简化配置进行二分法排查")
                 raise ValueError(error_msg)
 
-        elif hasattr(peft_config, "exclude_modules") and peft_config.exclude_modules and not excluded_modules:
-            # exclude_modules was passed but was not used
+    # def ok3443():
+        print("\n🔍 开始执行配置后验证检查")
+        
+        # 检查未使用的exclude_modules配置
+        print("\n✅ 检查未使用的排除模块配置")
+        if hasattr(peft_config, "exclude_modules") and peft_config.exclude_modules and not excluded_modules:
+            print(f"⚠️ 警告: 配置了exclude_modules但未实际排除任何模块")
+            print(f"   ⚙️ exclude_modules值: {peft_config.exclude_modules}")
+            print(f"   📊 实际排除模块数量: {len(excluded_modules)}")
+            print("🛑 潜在问题原因:")
+            print("1. 排除模式过于宽松")
+            print("2. 目标模块与排除模式无交集")
+            print("3. 正则表达式语法错误")
             warnings.warn(
-                f"You have passed exclude_modules={peft_config.exclude_modules} but no modules were excluded. "
-                "Please check that exclude_modules was set correctly."
+                f"您配置了 exclude_modules={peft_config.exclude_modules} 但未排除任何模块\n"
+                "建议检查以下内容:\n"
+                "- 模块名称是否包含特殊字符需要转义\n"
+                "- 是否在正确的层级进行排除（如包含父模块名前缀）\n"
+                "- 是否与target_modules配置冲突"
             )
 
+        # 检查权重绑定模块
+        print("\n🔗 检查权重绑定模块")
         tied_target_modules = self._get_tied_target_modules(model=model)
+        print(f"   🎯 检测到的绑定模块: {tied_target_modules if tied_target_modules else '无'}")
+        
         if tied_target_modules:
+            print("⚠️ 警告: 检测到绑定权重模块被适配器修改")
+            print(f"   🔄 受影响的模块: {tied_target_modules}")
+            print("🛑 潜在风险:")
+            print("- 适配器合并时可能导致权重不一致")
+            print("- 转换为ONNX/TensorRT等格式时可能出错")
+            print("- 多任务适配器间可能产生冲突")
             warnings.warn(
-                f"Model with `tie_word_embeddings=True` and the {tied_target_modules=} are part of the adapter. "
-                "This can lead to complications, for example when merging the adapter "
-                "or converting your model to formats other than safetensors. "
-                "See for example https://github.com/huggingface/peft/issues/2018."
+                f"检测到绑定模块 {tied_target_modules} 被适配器修改\n"
+                "技术细节:\n"
+                "当使用tie_word_embeddings=True时，以下操作可能引发问题:\n"
+                "• 使用merge_and_unload()合并适配器\n"
+                "• 转换为非safetensors格式\n"
+                "• 多GPU分布式训练\n"
+                "参考解决方案:\n"
+                "1. 使用safe_merge=True参数合并适配器\n"
+                "2. 保存为safetensors格式\n"
+                "3. 禁用词嵌入绑定（需重新训练模型）\n"
+                "更多信息请参考: https://github.com/huggingface/peft/issues/2018"
             )
+
+
 
         # It's important to set the adapter here (again), because otherwise it can happen that if a 2nd adapter is
         # added, and it targets different layer(s) than the first adapter (which is active), then those different
         # layers will be activated, which we don't want.
-        self.set_adapter(self.active_adapters)
-        self._mark_only_adapters_as_trainable(model)
+    # def ok32432():
+        print("\n🚀 开始执行训练模式配置流程")
+        print(f"📌 当前激活适配器: {self.active_adapters}")
 
+        # 设置当前适配器
+        print("\n🔧 设置活动适配器")
+        self.set_adapter(self.active_adapters)
+        print(f"   ✅ 已激活适配器列表: {self.active_adapters}")
+
+        # 标记可训练参数
+        print("\n🎯 配置可训练参数")
+        original_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        self._mark_only_adapters_as_trainable(model)
+        new_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"   📊 参数变化 | 原可训练参数: {original_trainable_params} → 新可训练参数: {new_trainable_params}")
+
+        # 推理模式处理
+        print("\n🔍 检查推理模式配置")
         if self.peft_config[adapter_name].inference_mode:
+            print(f"⚠️ 进入推理模式，冻结适配器参数 [{adapter_name}]")
+            frozen_params = 0
             for n, p in model.named_parameters():
                 if adapter_name in n:
                     p.requires_grad = False
+                    frozen_params += p.numel()
+            print(f"   ❄️ 冻结参数数量: {frozen_params} (示例: {[k for k,_ in model.named_parameters() if adapter_name in k][:2]}...)")
+        else:
+            print("✅ 保持训练模式，所有适配器参数可训练")
 
+        # 处理需要保存的模块
+        print("\n💾 配置额外保存模块")
         if _has_modules_to_save:
+            print(f"   🎯 需保存模块列表: {peft_config.modules_to_save}")
             if not hasattr(model, "modules_to_save"):
+                print("   🆕 创建新modules_to_save属性")
                 model.modules_to_save = set(peft_config.modules_to_save)
+                print(f"   📥 初始化保存模块: {model.modules_to_save}")
             else:
+                print("   🔄 合并到现有保存模块")
+                prev_count = len(model.modules_to_save)
                 model.modules_to_save.update(set(peft_config.modules_to_save))
+                print(f"   📈 模块数量变化: {prev_count} → {len(model.modules_to_save)}")
+            print(f"   🔍 最终需保存模块: {model.modules_to_save}")
+        else:
+            print("   ⚠️ 未配置需要额外保存的模块")
+
+        print("\n🎉 训练模式配置完成")
+        print("="*60)
+
 
     def merge_adapter(self, adapter_names: Optional[list[str]] = None) -> None:
         """
