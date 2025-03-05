@@ -383,65 +383,134 @@ class LoraModel(BaseTuner):
     def _create_new_module(lora_config, adapter_name, target, **kwargs):
         # Collect dispatcher functions to decide what backend to use for the replaced LoRA layer. The order matters,
         # because the first match is always used. Therefore, the default layers should be checked last.
+    # def ok54354353():
+        print("\n🚀 开始构建LoRA分派器列表")
         dispatchers = []
+        print(f"📦 初始分派器列表: {len(dispatchers)} 个")
 
+        # 处理自定义模块配置
         if lora_config._custom_modules:
-            # Experimental custom LoRA module support. Allows users to pass a custom mapping for unsupported layer
-            # types by impelementing their own LoRA layers.
-            def dynamic_dispatch_func(target, adapter_name, lora_config, **kwargs):
-                new_module = None
+            print("\n🔧 检测到自定义模块配置")
+            print(f"📋 自定义映射数量: {len(lora_config._custom_modules)}")
+            print(f"🔍 自定义类型示例: {list(lora_config._custom_modules.keys())[:3]}...")
 
+            def dynamic_dispatch_func(target, adapter_name, lora_config, **kwargs):
+                print(f"\n⚡ 执行动态分派 | 目标: {type(target).__name__}")
+                new_module = None
+                
+                # 获取基础层
                 if isinstance(target, BaseTunerLayer):
                     target_base_layer = target.get_base_layer()
+                    print(f"   🎯 基础层类型: {type(target_base_layer).__name__} (来自TunerLayer)")
                 else:
                     target_base_layer = target
+                    print(f"   🎯 基础层类型: {type(target_base_layer).__name__}")
 
-                for key, custom_cls in lora_config._custom_modules.items():
+                # 遍历自定义映射
+                for idx, (key, custom_cls) in enumerate(lora_config._custom_modules.items()):
+                    print(f"   🔄 尝试匹配 [{idx+1}/{len(lora_config._custom_modules)}] {key}...", end="")
                     if isinstance(target_base_layer, key):
+                        print("✅ 匹配成功")
                         new_module = custom_cls(target, adapter_name, **kwargs)
+                        print(f"   🛠️ 创建 {custom_cls.__name__} 实例 | 参数: {kwargs.keys()}")
                         break
+                    else:
+                        print("❌ 类型不匹配")
 
+                if new_module:
+                    print(f"🎯 成功创建自定义模块: {type(new_module).__name__}")
+                else:
+                    print("⚠️ 警告: 未找到匹配的自定义模块")
                 return new_module
 
             dispatchers.append(dynamic_dispatch_func)
+            print(f"\n✅ 已添加动态分派器 | 当前分派器数: {len(dispatchers)}")
 
-        # avoid eager bnb import
+        # 处理bnb 8bit
+        print("\n🔌 检查bitsandbytes 8bit可用性")
         if is_bnb_available():
+            print("✅ 检测到bitsandbytes 8bit")
             from .bnb import dispatch_bnb_8bit
-
+            print(f"📥 导入dispatch_bnb_8bit ({dispatch_bnb_8bit.__module__})")
             dispatchers.append(dispatch_bnb_8bit)
+            print(f"📌 当前分派器数: {len(dispatchers)}")
+        else:
+            print("⚠️ 未检测到bitsandbytes 8bit安装")
 
+        # 处理bnb 4bit
+        print("\n🔌 检查bitsandbytes 4bit可用性")
         if is_bnb_4bit_available():
+            print("✅ 检测到bitsandbytes 4bit")
             from .bnb import dispatch_bnb_4bit
-
+            print(f"📥 导入dispatch_bnb_4bit ({dispatch_bnb_4bit.__module__})")
             dispatchers.append(dispatch_bnb_4bit)
+            print(f"📌 当前分派器数: {len(dispatchers)}")
+        else:
+            print("⚠️ 未检测到bitsandbytes 4bit安装")
 
-        dispatchers.extend(
-            [
-                dispatch_eetq,
-                dispatch_aqlm,
-                dispatch_awq,
-                dispatch_gptq,
-                dispatch_hqq,
-                dispatch_torchao,
-                dispatch_megatron,
-                dispatch_default,
-            ]
-        )
+
+    # def ok232():
+        print("\n🚀 开始执行模块分派流程")
+        print(f"📌 目标模块: {target.__class__.__name__}")
+        print(f"🔧 适配器名称: {adapter_name}")
+        print(f"⚙️ LoRA配置参数: r={lora_config.r}, alpha={lora_config.lora_alpha}")
+
+        # 扩展分派器列表
+        print("\n📦 加载标准分派器集合:")
+        standard_dispatchers = [
+            dispatch_eetq, dispatch_aqlm, dispatch_awq, 
+            dispatch_gptq, dispatch_hqq, dispatch_torchao,
+            dispatch_megatron, dispatch_default
+        ]
+        dispatchers.extend(standard_dispatchers)
+        print(f"✅ 已添加 {len(standard_dispatchers)} 个标准分派器:")
+        for i, d in enumerate(standard_dispatchers, 1):
+            print(f"   [{i}] {d.__name__ if callable(d) else '无名分派器'}")
+        print(f"📌 总分派器数量: {len(dispatchers)}")
 
         new_module = None
-        for dispatcher in dispatchers:
-            new_module = dispatcher(target, adapter_name, lora_config=lora_config, **kwargs)
-            if new_module is not None:  # first match wins
-                break
+        print("\n🔍 开始尝试分派器链式匹配:")
+        for idx, dispatcher in enumerate(dispatchers, 1):
+            dispatcher_name = dispatcher.__name__ if callable(dispatcher) else str(dispatcher)
+            print(f"\n⚡ 尝试分派器 [{idx}/{len(dispatchers)}] {dispatcher_name}")
+            
+            try:
+                new_module = dispatcher(target, adapter_name, lora_config=lora_config, **kwargs)
+                print(f"   🧪 执行结果: {'成功' if new_module else '未匹配'}") 
+                
+                if new_module:
+                    print(f"🎯 {dispatcher_name} 分派成功！")
+                    print(f"📦 创建模块类型: {new_module.__class__.__name__}")
+                    print(f"🔗 模块ID: {id(new_module)}")
+                    break
+            except Exception as e:
+                print(f"⚠️ 分派器异常: {str(e)}")
+                continue
 
+        # 错误处理
         if new_module is None:
-            # no module could be matched
+            print("\n❌ 所有分派器尝试失败！")
+            print("🛑 失败原因分析:")
+            print(f"   目标模块类型: {target.__class__.__name__}")
+            print(f"   支持的类型列表:")
+            print("   - torch.nn.Linear")
+            print("   - torch.nn.Embedding") 
+            print("   - torch.nn.Conv2d/3d")
+            print("   - transformers.Conv1D")
+            
+            print("\n🔧 建议排查步骤:")
+            print("1. 检查目标模块是否继承自支持的基础类型")
+            print("2. 验证是否加载了必要的量化依赖（如bnb、gptq等）")
+            print("3. 尝试添加自定义模块分派器")
+            
             raise ValueError(
-                f"Target module {target} is not supported. Currently, only the following modules are supported: "
-                "`torch.nn.Linear`, `torch.nn.Embedding`, `torch.nn.Conv2d`, `torch.nn.Conv3d`, "
-                "`transformers.pytorch_utils.Conv1D`."
+                f"Unsupported module type {target.__class__.__name__}. "
+                "See console logs for supported types and debugging tips."
             )
+
+        print("\n🎉 模块分派流程完成")
+        print("="*60)
+
 
         return new_module
 
