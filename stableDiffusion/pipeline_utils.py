@@ -1042,11 +1042,44 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         # DEPRECATED: To be removed in 1.0.0
         # we are deprecating the `StableDiffusionInpaintPipelineLegacy` pipeline which gets loaded
         # when a user requests for a `StableDiffusionInpaintPipeline` with `diffusers` version being <= 0.5.1.
-        _maybe_raise_warning_for_inpainting(
+    # def ok324324():
+        print("\n[Inpainting Check] 开始图像修复兼容性检查")
+        
+        print("🔍 正在验证模型修复能力兼容性:")
+        print(f"   → 管道类型: {pipeline_class.__name__}")
+        print(f"   → 模型路径: {pretrained_model_name_or_path}")
+        
+        # 执行兼容性检查
+        print("\n[阶段1] 分析模型配置")
+        if not hasattr(config_dict, "get"):
+            print("⚠️ 配置字典异常: 缺少标准配置方法")
+            return
+        
+        print("   → 检查修复相关参数...")
+        requires_inpainting = config_dict.get("requires_inpainting", False)
+        print(f"      修复功能需求标识: {requires_inpainting}")
+        
+        print("\n[阶段2] 执行版本兼容性检测")
+        warning_triggered = _maybe_raise_warning_for_inpainting(
             pipeline_class=pipeline_class,
             pretrained_model_name_or_path=pretrained_model_name_or_path,
             config=config_dict,
         )
+        
+        if warning_triggered:
+            print("\n⚠️ 图像修复警告已触发")
+            print("▌" + " 重要提示 ".center(50, '─'))
+            print("│ 检测到可能不兼容的修复模型配置")
+            print("│ 建议操作:")
+            print("│ 1. 确认模型是否专门用于修复任务")
+            print("│ 2. 检查模型配置文件中的参数")
+            print("│ 3. 使用官方推荐的修复模型版本")
+            print(f"└{'─'*50}")
+        else:
+            print("✅ 图像修复兼容性检查通过")
+        
+        # print("\n[Inpainting Check] 检查流程完成\n")
+
 
         # 4. Define expected modules given pipeline signature
         # and define non-None initialized modules (=`init_kwargs`)
@@ -1054,70 +1087,173 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         # some modules can be passed directly to the init
         # in this case they are already instantiated in `kwargs`
         # extract them here
+    
+    # def ok23432():
+        print("\n[Parameter Processing] 开始参数处理流程")
+        
+        # 获取签名参数
+        print("\n[阶段1] 解析管道签名参数")
         expected_modules, optional_kwargs = cls._get_signature_keys(pipeline_class)
-        expected_types = pipeline_class._get_signature_types()
-        passed_class_obj = {k: kwargs.pop(k) for k in expected_modules if k in kwargs}
-        passed_pipe_kwargs = {k: kwargs.pop(k) for k in optional_kwargs if k in kwargs}
-        init_dict, unused_kwargs, _ = pipeline_class.extract_init_dict(config_dict, **kwargs)
+        print(f"📝 预期模块参数 ({len(expected_modules)}个):")
+        print("   → " + ", ".join(expected_modules))
+        print(f"🔧 可选关键字参数 ({len(optional_kwargs)}个):")
+        print("   → " + ", ".join(optional_kwargs))
 
-        # define init kwargs and make sure that optional component modules are filtered out
+        # 获取类型签名
+        print("\n[阶段2] 获取类型约束")
+        expected_types = pipeline_class._get_signature_types()
+        print(f"🔍 检测到 {len(expected_types)} 个类型约束:")
+        # for param, dtype in list(expected_types.items())[:3]:  # 显示前3个示例
+        #     print(f"   → {param}: {dtype.__name__}")
+        # if len(expected_types) > 3:
+        #     print(f"   → ...(其余{len(expected_types)-3}个类型约束省略)")
+
+        # 参数分类处理
+        print("\n[阶段3] 分类输入参数")
+        passed_class_obj = {k: kwargs.pop(k) for k in expected_modules if k in kwargs}
+        print(f"🎯 显式传递的类对象参数 ({len(passed_class_obj)}个):")
+        for k, v in passed_class_obj.items():
+            print(f"   → {k}: {type(v).__name__}")
+
+        passed_pipe_kwargs = {k: kwargs.pop(k) for k in optional_kwargs if k in kwargs}
+        print(f"\n⚙️ 管道专用关键字参数 ({len(passed_pipe_kwargs)}个):")
+        for k, v in passed_pipe_kwargs.items():
+            print(f"   → {k}: {v}")
+
+        # 提取初始化字典
+        print("\n[阶段4] 提取初始化配置")
+        init_dict, unused_kwargs, _ = pipeline_class.extract_init_dict(config_dict, **kwargs)
+        print(f"📦 基础初始化字典 ({len(init_dict)}项):")
+        print("   → 示例键: " + ", ".join(list(init_dict.keys())[:3]))
+        print(f"\n🚫 未使用参数 ({len(unused_kwargs)}个):")
+        print("   → " + ", ".join(unused_kwargs.keys()))
+
+        # 构建初始化关键字参数
+        print("\n[阶段5] 构建最终初始化参数")
         init_kwargs = {
             k: init_dict.pop(k)
             for k in optional_kwargs
             if k in init_dict and k not in pipeline_class._optional_components
         }
-        init_kwargs = {**init_kwargs, **passed_pipe_kwargs}
+        print(f"🔨 合并必要参数 ({len(init_kwargs)}项):")
+        print("   → 包含参数: " + ", ".join(init_kwargs.keys()))
+        
+        print("\n🔄 合并管道专用参数")
+        init_kwargs = {**init_kwargs,**passed_pipe_kwargs}
+        print(f"✅ 最终初始化参数 ({len(init_kwargs)}项):")
+        for k, v in list(init_kwargs.items())[:3]:
+            print(f"   → {k}: {v if not callable(v) else 'callable'}")
 
-        # remove `null` components
+        # 过滤空组件
+        print("\n[阶段6] 过滤无效组件")
         def load_module(name, value):
+            print(f"   ├─ 检查组件: {name}")
             if value[0] is None:
+                print(f"   │  → 排除原因: 配置值为None")
                 return False
             if name in passed_class_obj and passed_class_obj[name] is None:
+                print(f"   │  → 排除原因: 显式传递为None")
                 return False
+            print(f"   └─ 保留组件: {name}")
             return True
 
+        print("🔍 开始组件过滤...")
         init_dict = {k: v for k, v in init_dict.items() if load_module(k, v)}
+        print(f"\n✅ 过滤后有效组件 ({len(init_dict)}个):")
+        print("   → " + ", ".join(init_dict.keys()))
 
+        print("\n[Parameter Processing] 参数处理完成 ✅\n")
+
+    # def ok32432():
+        print("\n[Component Validation] 开始组件验证流程")
+        
+        # 组件类型校验
+        print("\n[阶段1] 执行组件类型检查")
         for key in init_dict.keys():
+            print(f"\n🔍 检查组件 '{key}'...")
+            
             if key not in passed_class_obj:
+                print(f"   → 未在显式传递参数中，跳过校验")
                 continue
+                
             if "scheduler" in key:
+                print(f"   → 调度器组件跳过类型检查")
                 continue
-
+                
             class_obj = passed_class_obj[key]
+            print(f"   → 对象类型: {class_obj.__class__.__name__}")
+            
+            # 生成预期类型列表
             _expected_class_types = []
             for expected_type in expected_types[key]:
                 if isinstance(expected_type, enum.EnumMeta):
+                    print(f"   → 解析枚举类型: {expected_type.__name__}")
                     _expected_class_types.extend(expected_type.__members__.keys())
                 else:
                     _expected_class_types.append(expected_type.__name__)
-
+                    
+            print(f"   → 允许的类型列表: {', '.join(_expected_class_types)}")
+            
+            # 执行类型验证
             _is_valid_type = class_obj.__class__.__name__ in _expected_class_types
-            if not _is_valid_type:
+            if _is_valid_type:
+                print(f"✅ 类型校验通过")
+            else:
+                print(f"❌ 类型不匹配!")
                 logger.warning(
                     f"Expected types for {key}: {_expected_class_types}, got {class_obj.__class__.__name__}."
                 )
 
-        # Special case: safety_checker must be loaded separately when using `from_flax`
+        # Flax特殊检测
+        print("\n[阶段2] 验证Flax加载模式")
         if from_flax and "safety_checker" in init_dict and "safety_checker" not in passed_class_obj:
+            print("⚠️ 检测到Flax加载的安全隐患:")
+            print("   → from_flax = True")
+            print("   → safety_checker存在但未显式传递")
+            print("   → 解决方案提示:")
+            print("     1. 设置 safety_checker=None")
+            print("     2. 手动加载安全检查器")
             raise NotImplementedError(
                 "The safety checker cannot be automatically loaded when loading weights `from_flax`."
                 " Please, pass `safety_checker=None` to `from_pretrained`, and load the safety checker"
                 " separately if you need it."
             )
+        else:
+            print("✅ Flax加载安全检查通过")
 
-        # 5. Throw nice warnings / errors for fast accelerate loading
+        # 未使用参数警告
+        print("\n[阶段3] 分析未使用参数")
         if len(unused_kwargs) > 0:
+            print(f"⚠️ 发现{len(unused_kwargs)}个未识别参数:")
+            for i, (k, v) in enumerate(unused_kwargs.items()):
+                if i < 3:  # 最多显示前3个
+                    print(f"   → {k}: {v.__class__.__name__ if not isinstance(v, str) else v}")
+            if len(unused_kwargs) > 3:
+                print(f"   → ...(其余{len(unused_kwargs)-3}个参数省略)")
             logger.warning(
-                f"Keyword arguments {unused_kwargs} are not expected by {pipeline_class.__name__} and will be ignored."
+                f"Keyword arguments {list(unused_kwargs.keys())} are not expected by {pipeline_class.__name__} and will be ignored."
             )
+        else:
+            print("✅ 所有参数均被正确使用")
+
 
         # import it here to avoid circular import
+    # def ok23432():
         from diffusers import pipelines
 
-        # 6. device map delegation
+    # def ok23432():
+        print("\n[Device Mapping] 开始设备映射处理")
+        
+        # 设备映射初始化
         final_device_map = None
         if device_map is not None:
+            print(f"\n🔧 初始化设备映射 | 策略: {device_map}")
+            print("▌" + " 设备映射参数 ".center(50, '─'))
+            print(f"│ → 最大显存分配: {max_memory or '默认'}")
+            print(f"│ → 张量精度: {torch_dtype}")
+            print(f"│ → 缓存路径: {cached_folder}")
+            print(f"└{'─'*50}")
+            
             final_device_map = _get_final_device_map(
                 device_map=device_map,
                 pipeline_class=pipeline_class,
@@ -1133,37 +1269,71 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 token=token,
                 revision=revision,
             )
+            print(f"\n✅ 最终设备映射生成完成 | 包含 {len(final_device_map)} 个组件分配")
+            print(f"   → 示例分配: {dict(list(final_device_map.items())[:2])}...")
+        else:
+            print("⚙️ 未配置设备映射，跳过分配")
 
-        # 7. Load each module in the pipeline
+        print("\n[Module Loading] 开始模块加载流程")
         current_device_map = None
-        for name, (library_name, class_name) in logging.tqdm(init_dict.items(), desc="Loading pipeline components..."):
-            # 7.1 device_map shenanigans
-            if final_device_map is not None and len(final_device_map) > 0:
+        
+        # 模块加载进度
+        total_modules = len(init_dict.items())
+        print(f"📦 共需加载 {total_modules} 个组件")
+        
+        for idx, (name, (library_name, class_name)) in enumerate(init_dict.items(), 1):
+            print(f"\n🔌 正在加载组件 ({idx}/{total_modules}): {name}")
+            print(f"   → 所属库: {library_name}")
+            print(f"   → 原始类名: {class_name}")
+
+            # 设备映射处理
+            if final_device_map:
                 component_device = final_device_map.get(name, None)
-                if component_device is not None:
-                    current_device_map = {"": component_device}
-                else:
-                    current_device_map = None
+                print(f"   → 分配设备: {component_device or '自动分配'}")
+                current_device_map = {"": component_device} if component_device else None
+            else:
+                print("   → 设备策略: 全局默认")
 
-            # 7.2 - now that JAX/Flax is an official framework of the library, we might load from Flax names
-            class_name = class_name[4:] if class_name.startswith("Flax") else class_name
+            # Flax类名处理
+            if class_name.startswith("Flax"):
+                original_class = class_name
+                class_name = class_name[4:]
+                print(f"   🪓 调整Flax类名: {original_class} → {class_name}")
 
-            # 7.3 Define all importable classes
+            # 导入类检查
             is_pipeline_module = hasattr(pipelines, library_name)
             importable_classes = ALL_IMPORTABLE_CLASSES
-            loaded_sub_model = None
-
-            # 7.4 Use passed sub model or load class_name from library_name
+            print(f"   → 是否管道模块: {'是' if is_pipeline_module else '否'}")
+            
+            # 已传递对象检查
             if name in passed_class_obj:
-                # if the model is in a pipeline module, then we load it from the pipeline
-                # check that passed_class_obj has correct parent class
+                print(f"\n⚠️ 使用预传递的 {name} 组件")
+                print(f"   → 对象类型: {type(passed_class_obj[name]).__name__}")
+                
+                # 执行父类校验
+                print("   → 执行父类合规性检查...")
                 maybe_raise_or_warn(
-                    library_name, library, class_name, importable_classes, passed_class_obj, name, is_pipeline_module
+                    library_name, library, class_name, 
+                    ALL_IMPORTABLE_CLASSES, passed_class_obj, name, is_pipeline_module
                 )
-
                 loaded_sub_model = passed_class_obj[name]
+                print(f"✅ 预传递组件验证通过 | 设备: {get_device(loaded_sub_model)}")
             else:
-                # load sub model
+            # def ok324324():
+                print("\n[Submodel Loading] 开始子模型加载流程")
+                
+                # 加载子模型
+                print(f"🔧 加载参数摘要:")
+                print(f"   → 所属库: {library_name}")
+                print(f"   → 目标类名: {class_name}")
+                print(f"   → 设备映射策略: {current_device_map or '默认分配'}")
+                print(f"   → 张量精度: {torch_dtype or '自动检测'}")
+                print(f"   → 使用安全张量: {'是' if use_safetensors else '否'}")
+                if variant:
+                    print(f"   → 使用变体配置: {variant}")
+
+                # try:
+                print("\n⏳ 正在加载子模型...")
                 loaded_sub_model = load_sub_model(
                     library_name=library_name,
                     class_name=class_name,
@@ -1186,42 +1356,114 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                     cached_folder=cached_folder,
                     use_safetensors=use_safetensors,
                 )
+                
+                # 显示加载结果
+                # print(f"\n✅ 子模型加载成功 | 设备位置: {get_device(loaded_sub_model)}")
+                # print(f"   → 实际数据类型: {loaded_sub_model.dtype}")
+                # print(f"   → 内存占用: {get_model_memory_usage(loaded_sub_model):.2f}MB")
+                if hasattr(loaded_sub_model, "num_parameters"):
+                    print(f"   → 参数量: {loaded_sub_model.num_parameters()/1e6:.1f}M")
+                    
+                # 特殊模式提示
+                if from_flax:
+                    print("⚠️ 注意: 当前使用Flax框架加载权重")
+                if low_cpu_mem_usage:
+                    print("💾 低内存模式已启用")
+                    
                 logger.info(
                     f"Loaded {name} as {class_name} from `{name}` subfolder of {pretrained_model_name_or_path}."
-                )
+                )           
 
             init_kwargs[name] = loaded_sub_model  # UNet(...), # DiffusionSchedule(...)
 
-        # 8. Handle connected pipelines.
-        if pipeline_class._load_connected_pipes and os.path.isfile(os.path.join(cached_folder, "README.md")):
-            init_kwargs = _update_init_kwargs_with_connected_pipeline(
-                init_kwargs=init_kwargs,
-                passed_pipe_kwargs=passed_pipe_kwargs,
-                passed_class_objs=passed_class_obj,
-                folder=cached_folder,
-                **kwargs_copied,
-            )
+    # def ok32432432():
+        print("\n[Final Initialization] 开始最终初始化流程")
+        
+        # 处理连接管道
+        print("\n[阶段1] 处理连接管道配置")
+        if pipeline_class._load_connected_pipes:
+            readme_path = os.path.join(cached_folder, "README.md")
+            print(f"🔗 检查连接管道需求 | README存在: {os.path.isfile(readme_path)}")
+            
+            if os.path.isfile(readme_path):
+                print("🔄 检测到连接管道配置，更新初始化参数...")
+                init_kwargs_before = set(init_kwargs.keys())
+                
+                init_kwargs = _update_init_kwargs_with_connected_pipeline(
+                    init_kwargs=init_kwargs,
+                    passed_pipe_kwargs=passed_pipe_kwargs,
+                    passed_class_objs=passed_class_obj,
+                    folder=cached_folder,
+                    **kwargs_copied,
+                )
+                
+                added_params = set(init_kwargs.keys()) - init_kwargs_before
+                print(f"✅ 新增连接管道参数 ({len(added_params)}项):")
+                print("   → " + ", ".join(added_params))
+        else:
+            print("⚙️ 未启用连接管道加载功能")
 
-        # 9. Potentially add passed objects if expected
+        # 缺失模块处理
+        print("\n[阶段2] 验证模块完整性")
         missing_modules = set(expected_modules) - set(init_kwargs.keys())
-        passed_modules = list(passed_class_obj.keys())
+        print(f"🔍 缺失必要模块 ({len(missing_modules)}个):")
+        print("   → " + (", ".join(missing_modules) if missing_modules else "无"))
+        
         optional_modules = pipeline_class._optional_components
-        if len(missing_modules) > 0 and missing_modules <= set(passed_modules + optional_modules):
-            for module in missing_modules:
-                init_kwargs[module] = passed_class_obj.get(module, None)
-        elif len(missing_modules) > 0:
-            passed_modules = set(list(init_kwargs.keys()) + list(passed_class_obj.keys())) - optional_kwargs
-            raise ValueError(
-                f"Pipeline {pipeline_class} expected {expected_modules}, but only {passed_modules} were passed."
-            )
+        print(f"📦 可选模块清单 ({len(optional_modules)}个):")
+        print("   → " + ", ".join(optional_modules))
+        
+        if missing_modules:
+            print("\n⚖️ 开始模块兼容性评估...")
+            covered_modules = missing_modules <= set(passed_class_obj.keys() | optional_modules)
+            print(f"   → 缺失模块是否可覆盖: {'是' if covered_modules else '否'}")
+            
+            if covered_modules:
+                print("🛠️ 自动补全缺失模块:")
+                for module in missing_modules:
+                    source = "显式传递" if module in passed_class_obj else "设为None"
+                    init_kwargs[module] = passed_class_obj.get(module, None)
+                    print(f"   → {module.ljust(15)}: {source}")
+            else:
+                print("❌ 存在无法覆盖的缺失模块")
+                passed_modules = set(init_kwargs.keys()) | set(passed_class_obj.keys()) - set(optional_modules)
+                error_msg = (
+                    f"模块完整性检查失败\n"
+                    f"预期模块: {', '.join(expected_modules)}\n"
+                    f"已提供模块: {', '.join(passed_modules)}\n"
+                    f"缺失关键模块: {', '.join(missing_modules - optional_modules)}"
+                )
+                print(error_msg)
+                raise ValueError(error_msg)
+        else:
+            print("✅ 所有必要模块已就绪")
 
-        # 10. Instantiate the pipeline
+        # 实例化管道
+        print("\n[阶段3] 创建管道实例")
+        print(f"🏭 初始化参数摘要 ({len(init_kwargs)}项):")
+        for k, v in list(init_kwargs.items())[:3]:  # 显示前3个参数示例
+            print(f"   → {k.ljust(15)}: {type(v).__name__ if v else 'None'}")
+        if len(init_kwargs) > 3:
+            print(f"   → ...(其余{len(init_kwargs)-3}个参数省略)")
+        
         model = pipeline_class(**init_kwargs)
+        print(f"✅ 管道实例创建成功 | 类型: {model.__class__.__name__}")
 
-        # 11. Save where the model was instantiated from
+        # 保存配置信息
+        print("\n[阶段4] 注册配置信息")
+        print(f"📝 记录模型来源路径: {pretrained_model_name_or_path}")
         model.register_to_config(_name_or_path=pretrained_model_name_or_path)
+        
         if device_map is not None:
+            print(f"📌 记录设备映射策略:")
+            for device, components in final_device_map.items():
+                print(f"   → {device.ljust(8)}: {len(components)}个组件")
             setattr(model, "hf_device_map", final_device_map)
+        else:
+            print("⚙️ 未配置设备映射，跳过记录")
+
+        print("\n[Final Initialization] 初始化流程全部完成 ✅\n")
+
         return model
 
     @property
