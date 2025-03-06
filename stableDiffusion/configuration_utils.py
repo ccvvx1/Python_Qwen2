@@ -414,6 +414,227 @@ class ConfigMixin:
         print("\n[Config Detection] 开始配置文件路径检测")
         
         print(f"🔍 输入路径分析: {pretrained_model_name_or_path}")
+
+        if os.path.isfile(pretrained_model_name_or_path):
+            config_file = pretrained_model_name_or_path
+        elif os.path.isdir(pretrained_model_name_or_path):
+            if subfolder is not None and os.path.isfile(
+                os.path.join(pretrained_model_name_or_path, subfolder, cls.config_name)
+            ):
+                config_file = os.path.join(pretrained_model_name_or_path, subfolder, cls.config_name)
+            elif os.path.isfile(os.path.join(pretrained_model_name_or_path, cls.config_name)):
+                # Load from a PyTorch checkpoint
+                config_file = os.path.join(pretrained_model_name_or_path, cls.config_name)
+            else:
+                raise EnvironmentError(
+                    f"Error no file named {cls.config_name} found in directory {pretrained_model_name_or_path}."
+                )
+        else:
+            try:
+                # Load from URL or cache if already cached
+                config_file = hf_hub_download(
+                    pretrained_model_name_or_path,
+                    filename=cls.config_name,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    proxies=proxies,
+                    local_files_only=local_files_only,
+                    token=token,
+                    user_agent=user_agent,
+                    subfolder=subfolder,
+                    revision=revision,
+                    local_dir=local_dir,
+                    local_dir_use_symlinks=local_dir_use_symlinks,
+                )
+            except RepositoryNotFoundError:
+                raise EnvironmentError(
+                    f"{pretrained_model_name_or_path} is not a local folder and is not a valid model identifier"
+                    " listed on 'https://huggingface.co/models'\nIf this is a private repository, make sure to pass a"
+                    " token having permission to this repo with `token` or log in with `huggingface-cli login`."
+                )
+            except RevisionNotFoundError:
+                raise EnvironmentError(
+                    f"{revision} is not a valid git identifier (branch name, tag name or commit id) that exists for"
+                    " this model name. Check the model page at"
+                    f" 'https://huggingface.co/{pretrained_model_name_or_path}' for available revisions."
+                )
+            except EntryNotFoundError:
+                raise EnvironmentError(
+                    f"{pretrained_model_name_or_path} does not appear to have a file named {cls.config_name}."
+                )
+            except HTTPError as err:
+                raise EnvironmentError(
+                    "There was a specific connection error when trying to load"
+                    f" {pretrained_model_name_or_path}:\n{err}"
+                )
+            except ValueError:
+                raise EnvironmentError(
+                    f"We couldn't connect to '{HUGGINGFACE_CO_RESOLVE_ENDPOINT}' to load this model, couldn't find it"
+                    f" in the cached files and it looks like {pretrained_model_name_or_path} is not the path to a"
+                    f" directory containing a {cls.config_name} file.\nCheckout your internet connection or see how to"
+                    " run the library in offline mode at"
+                    " 'https://huggingface.co/docs/diffusers/installation#offline-mode'."
+                )
+            except EnvironmentError:
+                raise EnvironmentError(
+                    f"Can't load config for '{pretrained_model_name_or_path}'. If you were trying to load it from "
+                    "'https://huggingface.co/models', make sure you don't have a local directory with the same name. "
+                    f"Otherwise, make sure '{pretrained_model_name_or_path}' is the correct path to a directory "
+                    f"containing a {cls.config_name} file"
+                )
+
+        try:
+            # Load config dict
+            config_dict = cls._dict_from_json_file(config_file)
+
+            commit_hash = extract_commit_hash(config_file)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise EnvironmentError(f"It looks like the config file at '{config_file}' is not a valid JSON file.")
+
+        if not (return_unused_kwargs or return_commit_hash):
+            return config_dict
+
+        outputs = (config_dict,)
+
+        if return_unused_kwargs:
+            outputs += (kwargs,)
+
+        if return_commit_hash:
+            outputs += (commit_hash,)
+
+        return outputs
+
+    # @classmethod
+    # @validate_hf_hub_args
+    def load_config1(
+        cls,
+        pretrained_model_name_or_path: Union[str, os.PathLike],
+        return_unused_kwargs=False,
+        return_commit_hash=False,
+        **kwargs,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        r"""
+        Load a model or scheduler configuration.
+
+        Parameters:
+            pretrained_model_name_or_path (`str` or `os.PathLike`, *optional*):
+                Can be either:
+
+                    - A string, the *model id* (for example `google/ddpm-celebahq-256`) of a pretrained model hosted on
+                      the Hub.
+                    - A path to a *directory* (for example `./my_model_directory`) containing model weights saved with
+                      [`~ConfigMixin.save_config`].
+
+            cache_dir (`Union[str, os.PathLike]`, *optional*):
+                Path to a directory where a downloaded pretrained model configuration is cached if the standard cache
+                is not used.
+            force_download (`bool`, *optional*, defaults to `False`):
+                Whether or not to force the (re-)download of the model weights and configuration files, overriding the
+                cached versions if they exist.
+            proxies (`Dict[str, str]`, *optional*):
+                A dictionary of proxy servers to use by protocol or endpoint, for example, `{'http': 'foo.bar:3128',
+                'http://hostname': 'foo.bar:4012'}`. The proxies are used on each request.
+            output_loading_info(`bool`, *optional*, defaults to `False`):
+                Whether or not to also return a dictionary containing missing keys, unexpected keys and error messages.
+            local_files_only (`bool`, *optional*, defaults to `False`):
+                Whether to only load local model weights and configuration files or not. If set to `True`, the model
+                won't be downloaded from the Hub.
+            token (`str` or *bool*, *optional*):
+                The token to use as HTTP bearer authorization for remote files. If `True`, the token generated from
+                `diffusers-cli login` (stored in `~/.huggingface`) is used.
+            revision (`str`, *optional*, defaults to `"main"`):
+                The specific model version to use. It can be a branch name, a tag name, a commit id, or any identifier
+                allowed by Git.
+            subfolder (`str`, *optional*, defaults to `""`):
+                The subfolder location of a model file within a larger model repository on the Hub or locally.
+            return_unused_kwargs (`bool`, *optional*, defaults to `False):
+                Whether unused keyword arguments of the config are returned.
+            return_commit_hash (`bool`, *optional*, defaults to `False):
+                Whether the `commit_hash` of the loaded configuration are returned.
+
+        Returns:
+            `dict`:
+                A dictionary of all the parameters stored in a JSON configuration file.
+
+        """
+        cache_dir = kwargs.pop("cache_dir", None)
+        local_dir = kwargs.pop("local_dir", None)
+        local_dir_use_symlinks = kwargs.pop("local_dir_use_symlinks", "auto")
+        force_download = kwargs.pop("force_download", False)
+        proxies = kwargs.pop("proxies", None)
+        token = kwargs.pop("token", None)
+        local_files_only = kwargs.pop("local_files_only", False)
+        revision = kwargs.pop("revision", None)
+        _ = kwargs.pop("mirror", None)
+        subfolder = kwargs.pop("subfolder", None)
+        user_agent = kwargs.pop("user_agent", {})
+    # def ok23234():
+        print("\n[Config Preparation] 开始配置准备流程")
+        
+        # 参数提取阶段
+        print("\n[阶段1] 提取配置参数")
+        param_table = [
+            ("cache_dir", "缓存目录", None),
+            ("local_dir", "本地目录", None),
+            ("local_dir_use_symlinks", "符号链接策略", "auto"),
+            ("force_download", "强制下载", False),
+            ("proxies", "代理设置", None),
+            ("token", "访问令牌", None),
+            ("local_files_only", "仅本地文件", False),
+            ("revision", "版本修订", None),
+            ("subfolder", "子目录路径", None),
+        ]
+        
+        extracted_params = {}
+        for param, desc, default in param_table:
+            value = kwargs.pop(param, default)
+            status = "默认值" if value == default else "自定义值"
+            extracted_params[param] = value
+            print(f"   → {param.ljust(20)}: {str(value).ljust(15)} | {status} ({desc})")
+        
+        # 处理特殊参数
+        print("\n[阶段2] 处理元数据参数")
+        print("🔄 合并用户代理信息:")
+        print(f"   原始 user_agent: {kwargs.get('user_agent', {})}")
+        user_agent = kwargs.pop("user_agent", {})
+        user_agent.update({"file_type": "config"})
+        print(f"   合并后 user_agent: {user_agent}")
+        
+        final_user_agent = http_user_agent(user_agent)
+        print(f"✅ 最终 User-Agent 字符串: {final_user_agent}")
+        
+        # 镜像参数处理
+        mirror = kwargs.pop("mirror", None)
+        if mirror:
+            print(f"⚠️ 检测到镜像参数已忽略: mirror={mirror}")
+
+        # 路径处理
+        print("\n[阶段3] 处理模型路径")
+        original_path = pretrained_model_name_or_path
+        pretrained_model_name_or_path = str(pretrained_model_name_or_path)
+        print(f"   → 原始路径类型: {type(original_path).__name__}")
+        print(f"   → 转换后路径: {pretrained_model_name_or_path}")
+
+        # 配置名称检查
+        print("\n[阶段4] 验证配置完整性")
+        if cls.config_name is None:
+            error_msg = (
+                "关键配置缺失: ConfigMixin 未定义 config_name\n"
+                "问题诊断:\n"
+                "1. 请确保在继承 ConfigMixin 的子类中定义 config_name\n"
+                "2. 检查类定义是否包含: config_name = 'your_config_name'"
+            )
+            print("❌ " + "\n".join(error_msg.split("\n")[:2]))
+            raise ValueError(error_msg)
+        else:
+            print(f"✅ 配置标识验证通过 | config_name='{cls.config_name}'")
+
+        # print("\n[Config Preparation] 配置准备完成 ✅\n")
+
+    # def ok234252():
+        print("\n[Config Detection] 开始配置文件路径检测")
+        
+        print(f"🔍 输入路径分析: {pretrained_model_name_or_path}")
         
         # 路径类型检查
         if os.path.isfile(pretrained_model_name_or_path):
