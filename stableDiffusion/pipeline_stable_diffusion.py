@@ -990,41 +990,73 @@ class StableDiffusionPipeline(
                 "not-safe-for-work" (nsfw) content.
         """
 
+    # def ok23432():
+        print("\n[Callbacks Setup] 开始回调函数配置")
+        
+        # 处理旧版回调参数
+        print("\n[阶段1] 处理回调参数弃用")
+        
         callback = kwargs.pop("callback", None)
         callback_steps = kwargs.pop("callback_steps", None)
+        deprecated_params = [
+            ("callback", kwargs.get("callback")),
+            ("callback_steps", kwargs.get("callback_steps"))
+        ]
+        
+        for param, value in deprecated_params:
+            if value is not None:
+                print(f"⚠️ 检测到弃用参数 {param} = {value}")
+                print(f"   → 替代方案: 使用 callback_on_step_end 参数")
+                deprecate(
+                    param,
+                    "1.0.0",
+                    f"Passing `{param}` 已弃用，请使用 `callback_on_step_end`"
+                )
+                kwargs.pop(param)
+        print("✅ 弃用参数处理完成")
 
-        if callback is not None:
-            deprecate(
-                "callback",
-                "1.0.0",
-                "Passing `callback` as an input argument to `__call__` is deprecated, consider using `callback_on_step_end`",
-            )
-        if callback_steps is not None:
-            deprecate(
-                "callback_steps",
-                "1.0.0",
-                "Passing `callback_steps` as an input argument to `__call__` is deprecated, consider using `callback_on_step_end`",
-            )
-
+        # 处理新版回调配置
+        print("\n[阶段2] 配置新版回调系统")
         if isinstance(callback_on_step_end, (PipelineCallback, MultiPipelineCallbacks)):
+            print(f"✅ 检测到有效回调处理器: {type(callback_on_step_end).__name__}")
             callback_on_step_end_tensor_inputs = callback_on_step_end.tensor_inputs
+            print(f"   → 注册的输入参数: {callback_on_step_end_tensor_inputs}")
+        else:
+            print("⚙️ 未配置回调处理器")
 
-        # 0. Default height and width to unet
+        # 设置默认分辨率
+        print("\n[阶段3] 图像分辨率设置")
         if not height or not width:
-            height = (
-                self.unet.config.sample_size
-                if self._is_unet_config_sample_size_int
-                else self.unet.config.sample_size[0]
-            )
-            width = (
-                self.unet.config.sample_size
-                if self._is_unet_config_sample_size_int
-                else self.unet.config.sample_size[1]
-            )
-            height, width = height * self.vae_scale_factor, width * self.vae_scale_factor
+            print("🔍 自动获取默认分辨率...")
+            sample_size = self.unet.config.sample_size
+            
+            # 判断样本尺寸类型
+            size_type = "整数" if self._is_unet_config_sample_size_int else "元组"
+            print(f"   → UNet配置样本尺寸: {sample_size} ({size_type})")
+            
+            base_height = sample_size if self._is_unet_config_sample_size_int else sample_size[0]
+            base_width = sample_size if self._is_unet_config_sample_size_int else sample_size[1]
+            print(f"   → 基础分辨率: {base_height}x{base_width}")
+            
+            # 应用VAE缩放因子
+            print(f"   → VAE缩放因子: {self.vae_scale_factor}")
+            height = base_height * self.vae_scale_factor
+            width = base_width * self.vae_scale_factor
+            print(f"✅ 最终默认分辨率: {height}x{width}")
+        else:
+            print(f"✅ 使用自定义分辨率: {height}x{width}")
+
+        # print("\n[Callbacks Setup] 配置完成 ✅\n")
+
         # to deal with lora scaling and other possible forward hooks
 
         # 1. Check inputs. Raise error if not correct
+    # def ok32432():
+        print("\n[Pipeline Setup] 开始推理流程初始化")
+        
+        # 输入验证阶段
+        print("\n[阶段1] 输入参数验证")
+        print("🔍 执行输入完整性检查...")
         self.check_inputs(
             prompt,
             height,
@@ -1037,28 +1069,48 @@ class StableDiffusionPipeline(
             ip_adapter_image_embeds,
             callback_on_step_end_tensor_inputs,
         )
+        print("✅ 所有输入参数验证通过")
 
+        # 参数设置阶段
+        print("\n[阶段2] 配置核心参数")
+        param_config = [
+            ("guidance_scale", guidance_scale),
+            ("guidance_rescale", guidance_rescale),
+            ("clip_skip", clip_skip),
+            ("cross_attention_kwargs", cross_attention_kwargs)
+        ]
+        for name, value in param_config:
+            print(f"   → {name.ljust(25)}: {str(value).ljust(15)} ({type(value).__name__})")
         self._guidance_scale = guidance_scale
         self._guidance_rescale = guidance_rescale
         self._clip_skip = clip_skip
         self._cross_attention_kwargs = cross_attention_kwargs
         self._interrupt = False
+        print("⚙️ 中断标志初始化: False")
 
-        # 2. Define call parameters
-        if prompt is not None and isinstance(prompt, str):
-            batch_size = 1
-        elif prompt is not None and isinstance(prompt, list):
-            batch_size = len(prompt)
+        # 批处理设置
+        print("\n[阶段3] 批处理配置")
+        if prompt is not None:
+            input_type = "str" if isinstance(prompt, str) else "list"
+            batch_size = 1 if isinstance(prompt, str) else len(prompt)
+            print(f"📦 文本提示类型: {input_type} → 批量大小: {batch_size}")
         else:
             batch_size = prompt_embeds.shape[0]
-
+            print(f"📦 使用预先生成的提示嵌入 → 批量大小: {batch_size}")
+        print(f"🔧 计算设备: {self._execution_device}")
         device = self._execution_device
+        # 注意力机制配置
+        print("\n[阶段4] 注意力参数设置")
+        lora_scale = self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs else None
+        print(f"🔗 LoRA缩放因子: {lora_scale or '未启用'}")
+        print(f"📌 CLIP跳过层数: {self.clip_skip}")
 
-        # 3. Encode input prompt
-        lora_scale = (
-            self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
-        )
-
+        # 提示编码过程
+        print("\n[阶段5] 文本提示编码")
+        print(f"📝 正向提示数量: {len(prompt) if isinstance(prompt, list) else 1}")
+        print(f"📝 负向提示数量: {len(negative_prompt) if isinstance(negative_prompt, list) else 1}")
+        print(f"🔄 分类器自由引导: {'启用' if self.do_classifier_free_guidance else '禁用'}")
+        
         prompt_embeds, negative_prompt_embeds = self.encode_prompt(
             prompt,
             device,
@@ -1070,14 +1122,41 @@ class StableDiffusionPipeline(
             lora_scale=lora_scale,
             clip_skip=self.clip_skip,
         )
+        
+        print("✅ 编码结果:")
+        print(f"   → 正向嵌入形状: {tuple(prompt_embeds.shape)}")
+        print(f"   → 负向嵌入形状: {tuple(negative_prompt_embeds.shape)}")
+        print(f"   → 每提示生成数: {num_images_per_prompt}")
+
+        # print("\n[Pipeline Setup] 初始化完成 ✅\n")
+
 
         # For classifier free guidance, we need to do two forward passes.
         # Here we concatenate the unconditional and text embeddings into a single batch
         # to avoid doing two forward passes
+    # def ok23432():
+        print("\n[Generation Setup] 开始生成准备流程")
+        
+        # 分类器自由引导处理
+        print("\n[阶段1] 分类器自由引导处理")
+        print(f"🔧 引导模式: {'启用' if self.do_classifier_free_guidance else '禁用'}")
         if self.do_classifier_free_guidance:
+            print(f"📐 合并嵌入前形状:")
+            print(f"   → 负向提示嵌入: {tuple(negative_prompt_embeds.shape)}")
+            print(f"   → 正向提示嵌入: {tuple(prompt_embeds.shape)}")
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
+            print(f"✅ 合并后提示嵌入形状: {tuple(prompt_embeds.shape)}")
+        else:
+            print("⚙️ 跳过提示嵌入合并步骤")
 
+        # IP适配器图像处理
+        print("\n[阶段2] IP适配器图像嵌入")
         if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+            print("🖼️ 检测到图像输入:")
+            print(f"   → 输入类型: {'图像文件' if ip_adapter_image else '预生成嵌入'}")
+            print(f"   → 批量大小: {batch_size * num_images_per_prompt}")
+            print(f"   → 设备: {device}")
+            
             image_embeds = self.prepare_ip_adapter_image_embeds(
                 ip_adapter_image,
                 ip_adapter_image_embeds,
@@ -1085,14 +1164,31 @@ class StableDiffusionPipeline(
                 batch_size * num_images_per_prompt,
                 self.do_classifier_free_guidance,
             )
+            print(f"✅ 生成图像嵌入形状: {tuple(image_embeds.shape)}")
+        else:
+            print("⚙️ 未检测到IP适配器输入")
 
-        # 4. Prepare timesteps
+        # 时间步准备
+        print("\n[阶段3] 时间步配置")
+        print(f"🔧 输入参数:")
+        print(f"   → 推理步数: {num_inference_steps or '自动'}")
+        print(f"   → 自定义时间步: {timesteps[:3] if timesteps is not None else '无'}...")
+        
         timesteps, num_inference_steps = retrieve_timesteps(
             self.scheduler, num_inference_steps, device, timesteps, sigmas
         )
-
-        # 5. Prepare latent variables
+        print(f"✅ 最终时间步参数:")
+        print(f"   → 总推理步数: {num_inference_steps}")
+        print(f"   → 时间步形状: {tuple(timesteps.shape)}")
+        print(f"   → 时间步范围: [{timesteps[0].item():.1f}, {timesteps[-1].item():.1f}]")
         num_channels_latents = self.unet.config.in_channels
+        # 潜在变量初始化
+        print("\n[阶段4] 潜在空间初始化")
+        print(f"📦 潜在变量参数:")
+        print(f"   → 输入通道数: {num_channels_latents}")
+        print(f"   → 目标分辨率: {height}x{width}")
+        print(f"   → 数据类型: {prompt_embeds.dtype}")
+        
         latents = self.prepare_latents(
             batch_size * num_images_per_prompt,
             num_channels_latents,
@@ -1103,38 +1199,102 @@ class StableDiffusionPipeline(
             generator,
             latents,
         )
+        print(f"✅ 潜在变量生成结果:")
+        print(f"   → 形状: {tuple(latents.shape)}")
+        print(f"   → 均值: {latents.mean().item():.4f}")
+        print(f"   → 标准差: {latents.std().item():.4f}")
+        if generator is not None:
+            print(f"🔧 使用生成器设备: {generator.device}")
 
-        # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
+        # 额外参数准备
+        print("\n[阶段5] 扩散过程参数")
+        print(f"🔧 噪声调度参数eta: {eta}")
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
+        print(f"✅ 额外参数内容: {list(extra_step_kwargs.keys())}")
 
-        # 6.1 Add image embeds for IP-Adapter
+        # IP适配器条件参数
+        print("\n[阶段6] 图像条件参数装配")
         added_cond_kwargs = (
             {"image_embeds": image_embeds}
             if (ip_adapter_image is not None or ip_adapter_image_embeds is not None)
             else None
         )
+        if added_cond_kwargs:
+            print(f"📦 添加图像条件参数:")
+            print(f"   → 嵌入形状: {tuple(added_cond_kwargs['image_embeds'].shape)}")
+            print(f"   → 设备: {added_cond_kwargs['image_embeds'].device}")
+        else:
+            print("⚙️ 无附加图像条件参数")
+
+        # print("\n[Generation Setup] 准备流程完成 ✅\n")
+
 
         # 6.2 Optionally get Guidance Scale Embedding
-        timestep_cond = None
+    # def ok23423():
+        print("\n[Denoising Loop] 开始去噪迭代流程")
+        
+        # 时间条件投影处理
+        print("\n[阶段1] 时间条件设置")
         if self.unet.config.time_cond_proj_dim is not None:
+            print(f"⏱️ 生成引导规模条件嵌入 (维度: {self.unet.config.time_cond_proj_dim})")
             guidance_scale_tensor = torch.tensor(self.guidance_scale - 1).repeat(batch_size * num_images_per_prompt)
+            print(f"   → 原始引导张量: shape={guidance_scale_tensor.shape} | dtype={guidance_scale_tensor.dtype}")
+            
             timestep_cond = self.get_guidance_scale_embedding(
-                guidance_scale_tensor, embedding_dim=self.unet.config.time_cond_proj_dim
+                guidance_scale_tensor, 
+                embedding_dim=self.unet.config.time_cond_proj_dim
             ).to(device=device, dtype=latents.dtype)
+            print(f"✅ 条件嵌入生成完成: shape={timestep_cond.shape} | device={timestep_cond.device}")
+        else:
+            print("⚙️ 未配置时间条件投影")
+            timestep_cond = None
 
-        # 7. Denoising loop
+        # 去噪循环初始化
+        print("\n[阶段2] 循环参数配置")
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+        print(f"📊 时间步总数: {len(timesteps)}")
+        print(f"🔥 预热步数: {num_warmup_steps}")
+        print(f"🔄 调度器顺序: {self.scheduler.order}阶")
         self._num_timesteps = len(timesteps)
+        total_steps = len(timesteps)
+
+        # 初始化性能监控
+        # start_time = time.time()
+        # step_times = []
+
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
+                # step_start = time.time()
+                current_step = i + 1
+                
+                print(f"\n[Step {current_step}/{total_steps}] 时间步: {t.item():.1f}")
+                
+                # 中断处理
                 if self.interrupt:
+                    print("⚠️ 检测到中断信号，跳过当前步骤")
                     continue
 
-                # expand the latents if we are doing classifier free guidance
-                latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
+                # 潜在变量扩展
+                print("\n[阶段2.1] 准备模型输入")
+                if self.do_classifier_free_guidance:
+                    print(f"🔀 扩展潜在变量 (引导比例: {self.guidance_scale})")
+                    latent_model_input = torch.cat([latents] * 2)
+                    print(f"   → 输入形状: {tuple(latent_model_input.shape)}")
+                else:
+                    print("⚙️ 直接使用原始潜在变量")
+                    latent_model_input = latents
+                
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                print(f"📐 缩放后输入范围: [{latent_model_input.min().item():.4f}, {latent_model_input.max().item():.4f}]")
 
-                # predict the noise residual
+                # UNet推理
+                print("\n[阶段2.2] 噪声预测")
+                print(f"🧠 UNet输入参数:")
+                print(f"   → 时间步: {t.item():.1f}")
+                print(f"   → 提示嵌入形状: {tuple(prompt_embeds.shape)}")
+                if timestep_cond is not None:
+                    print(f"   → 时间条件嵌入形状: {tuple(timestep_cond.shape)}")
+                
                 noise_pred = self.unet(
                     latent_model_input,
                     t,
@@ -1144,58 +1304,179 @@ class StableDiffusionPipeline(
                     added_cond_kwargs=added_cond_kwargs,
                     return_dict=False,
                 )[0]
+                print(f"✅ 噪声预测完成: shape={tuple(noise_pred.shape)}")
 
-                # perform guidance
+                # 引导处理
+                print("\n[阶段2.3] 分类器自由引导")
                 if self.do_classifier_free_guidance:
+                    print(f"📊 分割噪声预测 (比例: {self.guidance_scale:.1f}x)")
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+                    
+                    noise_diff = noise_pred_text - noise_pred_uncond
+                    print(f"   → 条件差异统计: μ={noise_diff.mean().item():.3f} ±{noise_diff.std().item():.3f}")
+                    
+                    noise_pred = noise_pred_uncond + self.guidance_scale * noise_diff
+                    print(f"📈 引导后噪声范围: [{noise_pred.min().item():.3f}, {noise_pred.max().item():.3f}]")
+                else:
+                    print("⚙️ 跳过引导步骤")
 
+            # def ok325322321():
+                print("\n[Denoising Step] 开始单步去噪处理")
+                
+                # 引导重缩放处理
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
-                    # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                    noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=self.guidance_rescale)
+                    print(f"\n🌀 应用噪声重缩放 (比例: {self.guidance_rescale:.2f})")
+                    print(f"   → 参考算法: arXiv:2305.08891 第3.4节")
+                    print(f"   → 原始噪声范围: [{noise_pred.min().item():.3f}, {noise_pred.max().item():.3f}]")
+                    
+                    noise_pred = rescale_noise_cfg(
+                        noise_pred, 
+                        noise_pred_text, 
+                        guidance_rescale=self.guidance_rescale
+                    )
+                    print(f"✅ 重缩放后噪声统计:")
+                    print(f"   → 均值变化: {noise_pred.mean().item()/noise_pred_text.mean().item():+.1%}")
+                    print(f"   → 新值范围: [{noise_pred.min().item():.3f}, {noise_pred.max().item():.3f}]")
+                else:
+                    print("\n⚙️ 跳过噪声重缩放 (guidance_rescale={:.2f})".format(self.guidance_rescale))
 
-                # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                # 潜在变量更新
+                print(f"\n⏳ 时间步 {t.item():.1f} 执行调度步骤...")
+                latents = self.scheduler.step(
+                    noise_pred, t, latents, **extra_step_kwargs, return_dict=False
+                )[0]
+                print(f"✅ 更新后潜在变量:")
+                print(f"   → 形状: {latents.shape}")
+                print(f"   → 均值: {latents.mean().item():.5f} (Δ{latents.mean().item() - noise_pred.mean().item():+.3e})")
+                print(f"   → 标准差: {latents.std().item():.5f}")
 
+                # 回调处理
                 if callback_on_step_end is not None:
+                    print("\n📡 执行步结束回调 ({}参数)".format(len(callback_on_step_end_tensor_inputs)))
                     callback_kwargs = {}
+                    
+                    # 构建回调参数
+                    param_info = []
                     for k in callback_on_step_end_tensor_inputs:
-                        callback_kwargs[k] = locals()[k]
+                        val = locals().get(k, None)
+                        callback_kwargs[k] = val
+                        param_info.append(f"{k}: {type(val).__name__}{list(val.shape) if hasattr(val,'shape') else ''}")
+                    print(f"   → 传递参数: {', '.join(param_info)}")
+                    
+                    # 执行回调
                     callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
+                    print(f"   → 回调返回 {len(callback_outputs)} 个修改项")
+                    
+                    # 应用修改
+                    modified = []
+                    for k in ["latents", "prompt_embeds", "negative_prompt_embeds"]:
+                        if k in callback_outputs:
+                            orig_shape = locals()[k].shape
+                            locals()[k] = callback_outputs.pop(k)
+                            modified.append(f"{k} {orig_shape} → {locals()[k].shape}")
+                    if modified:
+                        print(f"⚠️ 参数被修改: {' | '.join(modified)}")
+                    else:
+                        print("⚙️ 回调未修改核心参数")
 
-                    latents = callback_outputs.pop("latents", latents)
-                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
-                    negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
-
-                # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                # 进度更新和回调触发
+                update_flag = i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                )
+                print(f"\n📊 进度更新条件: {'满足' if update_flag else '不满足'} [i={i}/步骤数={len(timesteps)}]")
+                
+                if update_flag:
+                    prev_progress = progress_bar.n
                     progress_bar.update()
+                    print(f"🔄 进度更新: {prev_progress} → {progress_bar.n}/{progress_bar.total}")
+                    
                     if callback is not None and i % callback_steps == 0:
                         step_idx = i // getattr(self.scheduler, "order", 1)
+                        print(f"📞 触发回调 (全局步 {step_idx})")
+                        print(f"   → 当前时间步: {t.item():.1f}")
+                        print(f"   → 潜在变量设备: {latents.device}")
                         callback(step_idx, t, latents)
+                    else:
+                        print(f"⏭️ 跳过回调 (步间隔 {callback_steps})")
 
+                # XLA设备同步
                 if XLA_AVAILABLE:
+                    print("\n⚡ XLA设备同步")
+                    print(f"   → 同步前内存: {xm.get_memory_info(xm.xla_device())['kb_free']/1024:.1f} MB 可用")
                     xm.mark_step()
+                    print(f"   → 同步后设备状态: {xm.xla_device()}")
+                    print(f"   → 同步后内存: {xm.get_memory_info(xm.xla_device())['kb_free']/1024:.1f} MB 可用")
 
+    # print("\n[Denoising Step] 步骤处理完成 ✅\n")
+
+
+    # def ok36557():
+        print("\n[Postprocessing] 开始后处理流程")
+        
+        # VAE解码处理
         if not output_type == "latent":
-            image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
-                0
-            ]
+            print(f"\n🔍 解码潜在变量 (缩放因子: {self.vae.config.scaling_factor})")
+            print(f"   → 输入潜在变量形状: {latents.shape}")
+            print(f"   → 数据类型: {latents.dtype}")
+            
+            image = self.vae.decode(
+                latents / self.vae.config.scaling_factor, 
+                return_dict=False, 
+                generator=generator
+            )[0]
+            print(f"✅ 解码后图像形状: {image.shape} | 值域: [{image.min().item():.3f}, {image.max().item():.3f}]")
+
+            # 安全检测
+            print("\n🛡️ 执行内容安全检测...")
             image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
+            nsfw_count = sum(has_nsfw_concept) if has_nsfw_concept else 0
+            print(f"   → 检测结果: 发现 {nsfw_count} 个NSFW内容" if nsfw_count > 0 
+                else "   → 安全检测通过，未发现敏感内容")
         else:
+            print("\n⚙️ 保持潜在变量输出")
             image = latents
             has_nsfw_concept = None
+            print(f"   → 直接返回潜在变量形状: {image.shape}")
 
+        # 反归一化处理
+        print("\n🔧 准备反归一化参数")
         if has_nsfw_concept is None:
             do_denormalize = [True] * image.shape[0]
+            print(f"   → 全部 {image.shape[0]} 张图像将进行反归一化")
         else:
             do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
-        image = self.image_processor.postprocess(image, output_type=output_type, do_denormalize=do_denormalize)
+            enabled = sum(do_denormalize)
+            disabled = len(do_denormalize) - enabled
+            print(f"   → 反归一化配置: 启用 {enabled} / 禁用 {disabled}")
+        
+        # 图像后处理
+        print(f"\n🖼️ 执行最终图像处理 ({output_type.upper()})")
+        image = self.image_processor.postprocess(
+            image, 
+            output_type=output_type, 
+            do_denormalize=do_denormalize
+        )
+        print(f"✅ 处理后输出类型: {type(image[0]) if isinstance(image, list) else type(image)}")
 
-        # Offload all models
+        # 资源释放
+        print("\n♻️ 释放模型资源")
+        before_mem = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
         self.maybe_free_model_hooks()
+        after_mem = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+        if torch.cuda.is_available():
+            print(f"   → 显存释放: {(before_mem - after_mem)/1024**3:.2f} GB")
 
+        # 返回结果处理
+        print("\n📤 准备返回结果")
         if not return_dict:
+            print(f"   → 返回元组格式 (图像, NSFW标记)")
             return (image, has_nsfw_concept)
+        
+        print("   → 返回结构化PipelineOutput")
+        return StableDiffusionPipelineOutput(
+            images=image, 
+            nsfw_content_detected=has_nsfw_concept
+        )
 
-        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
+        print("\n[Postprocessing] 后处理完成 ✅\n")
+

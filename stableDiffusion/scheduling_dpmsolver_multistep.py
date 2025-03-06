@@ -227,76 +227,254 @@ class DPMSolverMultistepScheduler(SchedulerMixin, ConfigMixin):
         steps_offset: int = 0,
         rescale_betas_zero_snr: bool = False,
     ):
+
+        print("\n[Scheduler Initialization] 开始调度器初始化")
+        
+        # 依赖检查
+        print("\n[阶段1] 验证环境依赖")
+        print(f"🔍 检查Scipy安装状态 | 需要: {self.config.use_beta_sigmas}")
         if self.config.use_beta_sigmas and not is_scipy_available():
-            raise ImportError("Make sure to install scipy if you want to use beta sigmas.")
-        if sum([self.config.use_beta_sigmas, self.config.use_exponential_sigmas, self.config.use_karras_sigmas]) > 1:
-            raise ValueError(
-                "Only one of `config.use_beta_sigmas`, `config.use_exponential_sigmas`, `config.use_karras_sigmas` can be used."
+            print("❌ Scipy未安装但需要用于beta_sigmas")
+            raise ImportError(
+                "Scipy依赖缺失检测结果:\n"
+                "→ 当前配置: config.use_beta_sigmas = True\n"
+                "→ 解决方案: pip install scipy"
             )
-        if algorithm_type in ["dpmsolver", "sde-dpmsolver"]:
-            deprecation_message = f"algorithm_type {algorithm_type} is deprecated and will be removed in a future version. Choose from `dpmsolver++` or `sde-dpmsolver++` instead"
-            deprecate("algorithm_types dpmsolver and sde-dpmsolver", "1.0.0", deprecation_message)
+        print("✅ Scipy依赖检查通过")
+
+        # 参数冲突检查
+        print("\n[阶段2] 验证Sigma参数互斥性")
+        sigma_flags = [
+            ("use_beta_sigmas", self.config.use_beta_sigmas),
+            ("use_exponential_sigmas", self.config.use_exponential_sigmas), 
+            ("use_karras_sigmas", self.config.use_karras_sigmas)
+        ]
+        active_flags = [name for name, status in sigma_flags if status]
+        print(f"激活的Sigma参数 ({len(active_flags)}个): {', '.join(active_flags) or '无'}")
+
+        if len(active_flags) > 1:
+            error_msg = (
+                "检测到多个Sigma参数同时启用:\n"
+                f"→ 冲突参数: {', '.join(active_flags)}\n"
+                "硬件加速建议:\n"
+                "1. 仅选择一种Sigma生成策略\n" 
+                "2. 检查配置文件中的参数设置"
+            )
+            print(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        print("✅ Sigma参数互斥性验证通过")
+
+        # 算法类型弃用警告
+        print("\n[阶段3] 检查算法类型兼容性")
+        deprecated_algorithms = ["dpmsolver", "sde-dpmsolver"]
+        if algorithm_type in deprecated_algorithms:
+            print(f"⚠️ 检测到弃用算法类型: {algorithm_type}")
+            print("▌" + " 版本迁移提示 ".center(50, '─'))
+            print(f"│ 废弃版本: v1.0.0\n"
+                f"│ 推荐替代方案:\n"
+                f"│ → 原 {algorithm_type} → {algorithm_type}++\n"
+                f"│ 修改方法:\n"
+                f"│ 将algorithm_type参数替换为带++后缀的版本")
+            print("└" + "─"*50)
+            deprecate("legacy_algorithm", "1.0.0", "检测到旧版算法类型")
+
+        # Beta调度器选择
+        print("\n[阶段4] 初始化Beta参数")
+        beta_params = {
+            "schedule": beta_schedule,
+            "start": beta_start,
+            "end": beta_end,
+            "timesteps": num_train_timesteps
+        }
+        print(f"📊 调度参数: {beta_params}")
 
         if trained_betas is not None:
+            print("✅ 使用预训练Beta参数")
             self.betas = torch.tensor(trained_betas, dtype=torch.float32)
-        elif beta_schedule == "linear":
-            self.betas = torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
-        elif beta_schedule == "scaled_linear":
-            # this schedule is very specific to the latent diffusion model.
-            self.betas = torch.linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=torch.float32) ** 2
-        elif beta_schedule == "squaredcos_cap_v2":
-            # Glide cosine schedule
-            self.betas = betas_for_alpha_bar(num_train_timesteps)
+            print(f"   → Beta张量形状: {self.betas.shape}")
         else:
-            raise NotImplementedError(f"{beta_schedule} is not implemented for {self.__class__}")
+            print(f"🔄 生成{beta_schedule}调度参数...")
+            if beta_schedule == "linear":
+                print(f"   → 线性分布: {beta_start:.3f} 到 {beta_end:.3f}")
+                self.betas = torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
+            elif beta_schedule == "scaled_linear":
+                print("⚠️ 使用潜在扩散专用参数缩放")
+                print(f"   → 缩放后范围: sqrt({beta_start})={beta_start**0.5:.3f} 到 sqrt({beta_end})={beta_end**0.5:.3f}")
+                self.betas = torch.linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=torch.float32) ** 2
+            elif beta_schedule == "squaredcos_cap_v2":
+                print("🌀 使用Glide余弦调度器")
+                self.betas = betas_for_alpha_bar(num_train_timesteps)
+            else:
+                error_msg = (
+                    f"不支持的调度类型: {beta_schedule}\n"
+                    f"当前支持的调度器:\n"
+                    f"- linear\n- scaled_linear\n- squaredcos_cap_v2"
+                )
+                print(f"❌ {error_msg}")
+                raise NotImplementedError(error_msg)
+            
+            print(f"✅ 生成的Beta参数统计:")
+            print(f"   → 最小值: {self.betas.min().item():.4f}")
+            print(f"   → 最大值: {self.betas.max().item():.4f}")
+            print(f"   → 均值: {self.betas.mean().item():.4f}")
 
+
+    # def ok32432():
+        print("\n[Noise Scheduling] 开始噪声调度参数计算")
+        
+        # Beta重缩放处理
+        print("\n[阶段1] Beta参数处理")
+        print(f"🔧 Rescale Zero SNR模式: {'启用' if rescale_betas_zero_snr else '禁用'}")
         if rescale_betas_zero_snr:
+            print("🔄 正在调整Beta参数...")
+            original_betas = self.betas.clone()
             self.betas = rescale_zero_terminal_snr(self.betas)
-
+            print("✅ Beta调整完成 | 统计对比:")
+            print(f"   → 原始Beta范围: [{original_betas.min().item():.3e}, {original_betas.max().item():.3e}]")
+            print(f"   → 调整后Beta范围: [{self.betas.min().item():.3e}, {self.betas.max().item():.3e}]")
+        
+        # Alpha系列参数计算
+        print("\n[阶段2] Alpha参数计算")
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-
+        print(f"📊 Alpha累积乘积统计:")
+        print(f"   → 初始值: {self.alphas_cumprod[0].item():.4f}")
+        print(f"   → 最终值: {self.alphas_cumprod[-1].item():.4f}")
+        
         if rescale_betas_zero_snr:
-            # Close to 0 without being 0 so first sigma is not inf
-            # FP16 smallest positive subnormal works well here
+            print("\n⚠️ 修正累积乘积末位值")
+            print("   → 原始末位值: ", self.alphas_cumprod[-1].item())
             self.alphas_cumprod[-1] = 2**-24
-
-        # Currently we only support VP-type noise schedule
+            print(f"   → 修正后值: {self.alphas_cumprod[-1].item():.3e} (2^-24)")
+        
+        # 噪声参数计算
+        print("\n[阶段3] 噪声参数生成")
         self.alpha_t = torch.sqrt(self.alphas_cumprod)
         self.sigma_t = torch.sqrt(1 - self.alphas_cumprod)
+        print(f"✅ 生成核心参数:")
+        print(f"   → alpha_t形状: {tuple(self.alpha_t.shape)}")
+        print(f"   → sigma_t范围: [{self.sigma_t.min().item():.3f}, {self.sigma_t.max().item():.3f}]")
+        
+        # Lambda参数计算
+        print("\n[阶段4] 对数比值参数")
         self.lambda_t = torch.log(self.alpha_t) - torch.log(self.sigma_t)
+        print(f"📈 Lambda_t统计:")
+        print(f"   → 均值: {self.lambda_t.mean().item():.2f}")
+        print(f"   → 标准差: {self.lambda_t.std().item():.2f}")
+        
+        # Sigma参数计算
+        print("\n[阶段5] SNR参数转换")
         self.sigmas = ((1 - self.alphas_cumprod) / self.alphas_cumprod) ** 0.5
-
-        # standard deviation of the initial noise distribution
+        print(f"📐 信噪比参数:")
+        print(f"   → 最大SNR: {1/self.sigmas[0].item():.1f}")
+        print(f"   → 最小SNR: {1/self.sigmas[-1].item():.1f}")
+        
+        # 初始化噪声
+        print("\n[阶段6] 噪声初始化")
         self.init_noise_sigma = 1.0
+        print(f"🔧 初始噪声标准差: {self.init_noise_sigma}")
+        
+        print("\n[Noise Scheduling] 噪声调度计算完成 ✅\n")
 
-        # settings for DPM-Solver
-        if algorithm_type not in ["dpmsolver", "dpmsolver++", "sde-dpmsolver", "sde-dpmsolver++"]:
+    # def ok32423():
+        print("\n[DPM-Solver Setup] 开始DPM求解器配置")
+        
+        # 算法类型处理
+        print("\n[阶段1] 验证算法类型")
+        valid_algorithms = ["dpmsolver", "dpmsolver++", "sde-dpmsolver", "sde-dpmsolver++"]
+        print(f"🔍 当前算法类型: {algorithm_type} | 有效类型: {', '.join(valid_algorithms)}")
+        
+        if algorithm_type not in valid_algorithms:
             if algorithm_type == "deis":
+                print("⚠️ 检测到DEIS算法，自动映射为 dpmsolver++")
                 self.register_to_config(algorithm_type="dpmsolver++")
+                print(f"✅ 更新后算法类型: {self.config.algorithm_type}")
             else:
-                raise NotImplementedError(f"{algorithm_type} is not implemented for {self.__class__}")
+                error_msg = (
+                    f"不支持的算法类型 {algorithm_type}\n"
+                    f"允许的类型:\n"
+                    f"- 经典模式: dpmsolver, dpmsolver++\n"
+                    f"- 随机微分模式: sde-dpmsolver, sde-dpmsolver++"
+                )
+                print(f"❌ {error_msg}")
+                raise NotImplementedError(error_msg)
+        else:
+            print(f"✅ 算法类型验证通过 | 使用: {algorithm_type}")
 
-        if solver_type not in ["midpoint", "heun"]:
-            if solver_type in ["logrho", "bh1", "bh2"]:
+        # 求解器类型处理
+        print("\n[阶段2] 配置求解器类型")
+        valid_solvers = ["midpoint", "heun"]
+        legacy_solvers = ["logrho", "bh1", "bh2"]
+        print(f"🔍 当前求解器类型: {solver_type} | 有效类型: {', '.join(valid_solvers + legacy_solvers)}")
+        
+        if solver_type not in valid_solvers:
+            if solver_type in legacy_solvers:
+                print(f"⚠️ 检测到旧版求解器 {solver_type}，自动转换为 midpoint")
                 self.register_to_config(solver_type="midpoint")
+                print(f"✅ 更新后求解器类型: {self.config.solver_type}")
             else:
-                raise NotImplementedError(f"{solver_type} is not implemented for {self.__class__}")
+                error_msg = (
+                    f"无效的求解器类型 {solver_type}\n"
+                    f"支持的选项:\n"
+                    f"- 推荐类型: midpoint, heun\n"
+                    f"- 兼容旧版: {', '.join(legacy_solvers)}"
+                )
+                print(f"❌ {error_msg}")
+                raise NotImplementedError(error_msg)
+        else:
+            print(f"✅ 求解器类型验证通过 | 使用: {solver_type}")
 
+        # 最终sigma类型验证
+        print("\n[阶段3] 验证最终Sigma配置")
+        print(f"🔧 Final Sigma类型: {final_sigmas_type}")
         if algorithm_type not in ["dpmsolver++", "sde-dpmsolver++"] and final_sigmas_type == "zero":
-            raise ValueError(
-                f"`final_sigmas_type` {final_sigmas_type} is not supported for `algorithm_type` {algorithm_type}. Please choose `sigma_min` instead."
+            error_msg = (
+                f"配置冲突检测:\n"
+                f"→ 算法类型 {algorithm_type} 不支持 final_sigma_type='zero'\n"
+                f"解决方案建议:\n"
+                f"1. 切换算法为 dpmsolver++ 系列\n"
+                f"2. 使用 sigma_min 替代"
             )
+            print(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        else:
+            print("✅ Final Sigma配置验证通过")
 
-        # setable values
+        # 初始化运行参数
+        print("\n[阶段4] 初始化运行时变量")
         self.num_inference_steps = None
+        print(f"🔧 推理步数初始化: {self.num_inference_steps}")
+        
+        print("🕒 生成时间步序列...")
         timesteps = np.linspace(0, num_train_timesteps - 1, num_train_timesteps, dtype=np.float32)[::-1].copy()
+        print(f"   → 时间范围: [{timesteps.min()}, {timesteps.max()}]")
+        print(f"   → 总步数: {len(timesteps)}")
         self.timesteps = torch.from_numpy(timesteps)
+        print(f"✅ 时间步张量设备: {self.timesteps.device} | 类型: {self.timesteps.dtype}")
+
+        print(f"\n📦 初始化模型输出缓存 (容量: {solver_order})")
         self.model_outputs = [None] * solver_order
+        print(f"   → 缓存结构: {type(self.model_outputs)}[{len(self.model_outputs)}]")
+
+        print("\n🔧 初始化顺序计数器")
         self.lower_order_nums = 0
+        print(f"   → 初始计数: {self.lower_order_nums}")
+
+        # 索引管理
+        print("\n🔗 初始化索引指针")
         self._step_index = None
         self._begin_index = None
-        self.sigmas = self.sigmas.to("cpu")  # to avoid too much CPU/GPU communication
+        print(f"   → 当前步索引: {self._step_index}")
+        print(f"   → 起始索引: {self._begin_index}")
+
+        # 设备优化
+        print("\n[阶段5] 设备内存优化")
+        print(f"📡 移动sigma参数到CPU (原始设备: {self.sigmas.device})")
+        self.sigmas = self.sigmas.to("cpu")
+        print(f"✅ 当前sigma设备: {self.sigmas.device} | 形状: {tuple(self.sigmas.shape)}")
+
+        print("\n[DPM-Solver Setup] 配置完成 ✅\n")
+
 
     @property
     def step_index(self):
