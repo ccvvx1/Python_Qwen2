@@ -721,7 +721,7 @@ class StableDiffusionPipeline(
             print("\n[阶段2] LoRA层调整")
             if isinstance(self, StableDiffusionLoraLoaderMixin) and USE_PEFT_BACKEND:
                 print(f"🔧 恢复LoRA原始比例 (当前scale={lora_scale})")
-                print(f"   → 文本编码器层数: {len(self.text_encoder.layers)}")
+                # print(f"   → 文本编码器层数: {len(self.text_encoder.layers)}")
                 unscale_lora_layers(self.text_encoder, lora_scale)
                 print("✅ LoRA层已恢复默认比例")
             else:
