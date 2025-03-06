@@ -41,7 +41,7 @@ from requests.exceptions import HTTPError
 from tqdm.auto import tqdm
 
 from diffusers import __version__
-from diffusers.configuration_utils import ConfigMixin
+from configuration_utils import ConfigMixin
 from diffusers.models import AutoencoderKL
 from diffusers.models.attention_processor import FusedAttnProcessor2_0
 from diffusers.models.modeling_utils import _LOW_CPU_MEM_USAGE_DEFAULT, ModelMixin
@@ -941,7 +941,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             print("⚙️ 未指定变体名称，跳过分片格式检查")
 
         # 配置文件加载
-        print("\n[阶段2] 加载模型配置")
+        print("\n[阶段2] 加载模型配置", "用到的类：", cls)
         print(f"📂 从缓存目录加载配置: {cached_folder}")
         config_dict = cls.load_config(cached_folder)
         print(f"✅ 配置加载完成 | 共加载 {len(config_dict)} 个配置项")
