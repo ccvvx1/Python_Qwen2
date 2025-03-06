@@ -470,27 +470,48 @@ class StableDiffusionPipeline(
         """
         # set lora scale so that monkey patched LoRA
         # function of text encoder can correctly access it
+    # def ok32432():
+        print("\n[Text Processing] 开始文本处理流程")
+        
+        # LoRA缩放处理
         if lora_scale is not None and isinstance(self, StableDiffusionLoraLoaderMixin):
+            print(f"\n🔄 动态调整LoRA缩放 (比例: {lora_scale})")
             self._lora_scale = lora_scale
-
-            # dynamically adjust the LoRA scale
             if not USE_PEFT_BACKEND:
+                print("   → 使用原生LoRA调整方法")
                 adjust_lora_scale_text_encoder(self.text_encoder, lora_scale)
             else:
+                print("   → 使用PEFT后端调整方法")
                 scale_lora_layers(self.text_encoder, lora_scale)
+            print(f"✅ 文本编码器LoRA层已更新")
+        elif lora_scale is not None:
+            print(f"\n⚠️ 忽略LoRA缩放请求 (当前模型不支持LoRA)")
 
-        if prompt is not None and isinstance(prompt, str):
-            batch_size = 1
-        elif prompt is not None and isinstance(prompt, list):
-            batch_size = len(prompt)
+        # 批次大小确定
+        print("\n📦 确定批量大小")
+        if prompt is not None:
+            input_type = "str" if isinstance(prompt, str) else "list"
+            batch_size = 1 if isinstance(prompt, str) else len(prompt)
+            print(f"   → 来源: 文本输入 ({input_type}) → 批量大小: {batch_size}")
         else:
             batch_size = prompt_embeds.shape[0]
+            print(f"   → 来源: 预生成提示嵌入 → 批量大小: {batch_size}")
+        print(f"✅ 最终批量大小: {batch_size}")
 
+        # 文本嵌入处理
         if prompt_embeds is None:
-            # textual inversion: process multi-vector tokens if necessary
+            print("\n🔡 初始化文本嵌入生成")
             if isinstance(self, TextualInversionLoaderMixin):
+                print("🌀 检测到文本反演加载器，进行多向量标记处理")
+                original_prompt = prompt
                 prompt = self.maybe_convert_prompt(prompt, self.tokenizer)
-
+                if prompt != original_prompt:
+                    print(f"   → 文本转换: '{original_prompt}' → '{prompt}'")
+            
+            print(f"\n🔠 执行文本标记化 (model_max_length={self.tokenizer.model_max_length})")
+            print(f"   → Padding策略: max_length")
+            # print(f"   → 截断策略: {'启用' if truncation else '禁用'}")
+            
             text_inputs = self.tokenizer(
                 prompt,
                 padding="max_length",
@@ -499,81 +520,144 @@ class StableDiffusionPipeline(
                 return_tensors="pt",
             )
             text_input_ids = text_inputs.input_ids
-            untruncated_ids = self.tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
+            print(f"✅ 标记化结果: shape={text_input_ids.shape} | dtype={text_input_ids.dtype}")
 
-            if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
-                text_input_ids, untruncated_ids
-            ):
-                removed_text = self.tokenizer.batch_decode(
-                    untruncated_ids[:, self.tokenizer.model_max_length - 1 : -1]
-                )
-                logger.warning(
-                    "The following part of your input was truncated because CLIP can only handle sequences up to"
-                    f" {self.tokenizer.model_max_length} tokens: {removed_text}"
-                )
+            # 截断验证
+            print("\n🔍 验证输入截断情况")
+            untruncated_ids = self.tokenizer(
+                prompt, 
+                padding="longest", 
+                return_tensors="pt"
+            ).input_ids
 
+
+
+        # def ok324324():
+            print("\n[Text Encoding] 开始文本编码流程")
+            
+            # 文本截断警告处理
+            if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
+                print("\n⚠️ 检测到输入截断")
+                removed_text = self.tokenizer.batch_decode(untruncated_ids[:, self.tokenizer.model_max_length - 1 : -1])
+                print(f"   → 模型最大长度: {self.tokenizer.model_max_length} tokens")
+                print(f"   → 被截断内容: {removed_text}")
+                print(f"   → 原始长度: {untruncated_ids.shape[-1]} | 截断后长度: {text_input_ids.shape[-1]}")
+
+            # 注意力掩码配置
+            print("\n[阶段1] 注意力机制配置")
             if hasattr(self.text_encoder.config, "use_attention_mask") and self.text_encoder.config.use_attention_mask:
                 attention_mask = text_inputs.attention_mask.to(device)
+                print(f"✅ 启用注意力掩码 | shape: {attention_mask.shape} | dtype: {attention_mask.dtype}")
             else:
                 attention_mask = None
+                print("⚙️ 未配置注意力掩码")
 
+            # CLIP层跳过处理
+            print("\n[阶段2] 文本编码执行")
             if clip_skip is None:
+                print(f"🌀 标准CLIP编码 (clip_skip=None)")
                 prompt_embeds = self.text_encoder(text_input_ids.to(device), attention_mask=attention_mask)
                 prompt_embeds = prompt_embeds[0]
             else:
+                print(f"⏭️ 跳过最后{clip_skip}个CLIP层")
                 prompt_embeds = self.text_encoder(
-                    text_input_ids.to(device), attention_mask=attention_mask, output_hidden_states=True
+                    text_input_ids.to(device), 
+                    attention_mask=attention_mask, 
+                    output_hidden_states=True
                 )
+                print(f"   → 获取第{- (clip_skip + 1)}层隐藏状态")
+                prompt_embeds = prompt_embeds[-1][-(clip_skip + 1)]
+                print(f"   → 层归一化前形状: {prompt_embeds.shape}")
+                prompt_embeds = self.text_encoder.text_model.final_layer_norm(prompt_embeds)
+            
+
+
                 # Access the `hidden_states` first, that contains a tuple of
                 # all the hidden states from the encoder layers. Then index into
                 # the tuple to access the hidden states from the desired layer.
-                prompt_embeds = prompt_embeds[-1][-(clip_skip + 1)]
+                # prompt_embeds = prompt_embeds[-1][-(clip_skip + 1)]
                 # We also need to apply the final LayerNorm here to not mess with the
                 # representations. The `last_hidden_states` that we typically use for
                 # obtaining the final prompt representations passes through the LayerNorm
                 # layer.
-                prompt_embeds = self.text_encoder.text_model.final_layer_norm(prompt_embeds)
+                # prompt_embeds = self.text_encoder.text_model.final_layer_norm(prompt_embeds)
 
+    # def ok3243242():
+        print("\n[Embedding Preparation] 开始嵌入预处理")
+        
+        # 确定嵌入数据类型
+        print("\n[阶段1] 数据类型验证")
         if self.text_encoder is not None:
             prompt_embeds_dtype = self.text_encoder.dtype
+            print(f"🔍 从text_encoder获取数据类型: {prompt_embeds_dtype}")
         elif self.unet is not None:
             prompt_embeds_dtype = self.unet.dtype
+            print(f"🔍 从unet获取数据类型: {prompt_embeds_dtype}")
         else:
             prompt_embeds_dtype = prompt_embeds.dtype
-
+            print(f"⚠️ 从嵌入本身推断数据类型: {prompt_embeds_dtype}")
+        
+        print(f"⚙️ 转换嵌入到 {prompt_embeds_dtype} 类型 | 设备: {device}")
         prompt_embeds = prompt_embeds.to(dtype=prompt_embeds_dtype, device=device)
+        print(f"✅ 当前嵌入设备: {prompt_embeds.device} | dtype: {prompt_embeds.dtype}")
 
-        bs_embed, seq_len, _ = prompt_embeds.shape
-        # duplicate text embeddings for each generation per prompt, using mps friendly method
+        # 扩展嵌入维度
+        print("\n[阶段2] 嵌入扩展")
+        original_shape = prompt_embeds.shape
+        print(f"📦 原始形状: (batch_size={original_shape[0]}, seq_len={original_shape[1]}, dim={original_shape[2]})")
+        
+        print(f"🔄 按每提示生成数扩展: {num_images_per_prompt}x")
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
+        prompt_embeds = prompt_embeds.view(original_shape[0] * num_images_per_prompt, original_shape[1], -1)
+        
+        print(f"✅ 扩展后形状: {prompt_embeds.shape}")
 
-        # get unconditional embeddings for classifier free guidance
+        # 处理负向提示
         if do_classifier_free_guidance and negative_prompt_embeds is None:
-            uncond_tokens: List[str]
+            print("\n[阶段3] 生成无条件嵌入")
+            print(f"🔧 分类器自由引导比例: {self.guidance_scale}")
+            
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
+                print(f"⚙️ 使用空负向提示 (batch_size={batch_size})")
             elif prompt is not None and type(prompt) is not type(negative_prompt):
                 raise TypeError(
                     f"`negative_prompt` should be the same type to `prompt`, but got {type(negative_prompt)} !="
                     f" {type(prompt)}."
                 )
             elif isinstance(negative_prompt, str):
+                print(f"⚙️ 单文本负向提示扩展至批次大小 {batch_size}")
                 uncond_tokens = [negative_prompt]
             elif batch_size != len(negative_prompt):
-                raise ValueError(
-                    f"`negative_prompt`: {negative_prompt} has batch size {len(negative_prompt)}, but `prompt`:"
-                    f" {prompt} has batch size {batch_size}. Please make sure that passed `negative_prompt` matches"
-                    " the batch size of `prompt`."
-                )
+                error_msg = (f"❌ 批次大小不匹配: 负向提示数量 {len(negative_prompt)} "
+                        f"≠ 正向提示数量 {batch_size}")
+                print(error_msg)
+                raise ValueError(error_msg)
             else:
                 uncond_tokens = negative_prompt
+                print(f"✅ 有效负向提示数量: {len(uncond_tokens)}")
 
-            # textual inversion: process multi-vector tokens if necessary
+
+
+        # def ok234324():
+            print("\n[Negative Prompt Processing] 开始负向提示处理")
+            
+            # 文本反演处理
             if isinstance(self, TextualInversionLoaderMixin):
+                print("\n🌀 检测到文本反演加载器")
+                original_uncond = uncond_tokens
                 uncond_tokens = self.maybe_convert_prompt(uncond_tokens, self.tokenizer)
+                if uncond_tokens != original_uncond:
+                    print(f"   → 转换特殊标记: {original_uncond} → {uncond_tokens}")
+            else:
+                print("\n⚙️ 未启用文本反演处理")
 
+            # 标记化处理
             max_length = prompt_embeds.shape[1]
+            print(f"\n🔠 负向提示标记化 (max_length={max_length})")
+            print(f"   → 输入token数量: {len(uncond_tokens)}条提示")
+            print(f"   → Padding策略: max_length ({max_length} tokens)")
+            
             uncond_input = self.tokenizer(
                 uncond_tokens,
                 padding="max_length",
@@ -581,31 +665,69 @@ class StableDiffusionPipeline(
                 truncation=True,
                 return_tensors="pt",
             )
+            print(f"✅ 标记化结果: input_ids形状={uncond_input.input_ids.shape}")
 
+            # 注意力掩码配置
+            print("\n🎭 注意力机制配置")
             if hasattr(self.text_encoder.config, "use_attention_mask") and self.text_encoder.config.use_attention_mask:
                 attention_mask = uncond_input.attention_mask.to(device)
+                print(f"   → 启用注意力掩码 | 设备: {attention_mask.device} | 类型: {attention_mask.dtype}")
             else:
                 attention_mask = None
+                print("⚙️ 未配置注意力掩码")
 
+            # 文本编码
+            print("\n🧠 执行负向提示编码")
+            print(f"   → 输入设备: {device}")
+            print(f"   → 输入形状: {uncond_input.input_ids.shape}")
+            
             negative_prompt_embeds = self.text_encoder(
                 uncond_input.input_ids.to(device),
                 attention_mask=attention_mask,
             )
             negative_prompt_embeds = negative_prompt_embeds[0]
+            
+            print(f"\n✅ 负向嵌入生成完成:")
+            print(f"   → 输出形状: {negative_prompt_embeds.shape}")
+            print(f"   → 数据类型: {negative_prompt_embeds.dtype}")
+            print(f"   → 均值: {negative_prompt_embeds.mean().item():.4f} ± {negative_prompt_embeds.std().item():.4f}")
 
+            # print("\n[Negative Prompt Processing] 处理完成 ✅\n")
+            # return negative_prompt_embeds
+
+    # def ok32432():
+        print("\n[CFG Preparation] 开始分类器自由引导准备")
+        
         if do_classifier_free_guidance:
-            # duplicate unconditional embeddings for each generation per prompt, using mps friendly method
+            print("\n[阶段1] 负向提示嵌入处理")
             seq_len = negative_prompt_embeds.shape[1]
-
+            print(f"📏 原始负向嵌入形状: {negative_prompt_embeds.shape} (seq_len={seq_len})")
+            
+            # 数据类型转换
+            print(f"⚙️ 数据类型对齐: {negative_prompt_embeds.dtype} → {prompt_embeds_dtype}")
             negative_prompt_embeds = negative_prompt_embeds.to(dtype=prompt_embeds_dtype, device=device)
-
+            print(f"✅ 当前设备: {negative_prompt_embeds.device} | dtype: {negative_prompt_embeds.dtype}")
+            
+            # 嵌入扩展
+            print(f"\n🔄 扩展负向嵌入 (每提示生成数: {num_images_per_prompt})")
+            print(f"   → 原始批次大小: {batch_size}")
             negative_prompt_embeds = negative_prompt_embeds.repeat(1, num_images_per_prompt, 1)
             negative_prompt_embeds = negative_prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
+            print(f"✅ 扩展后形状: {negative_prompt_embeds.shape}")
+        else:
+            print("\n⏭️ 跳过CFG准备 (未启用分类器自由引导)")
 
         if self.text_encoder is not None:
+            print("\n[阶段2] LoRA层调整")
             if isinstance(self, StableDiffusionLoraLoaderMixin) and USE_PEFT_BACKEND:
-                # Retrieve the original scale by scaling back the LoRA layers
+                print(f"🔧 恢复LoRA原始比例 (当前scale={lora_scale})")
+                print(f"   → 文本编码器层数: {len(self.text_encoder.layers)}")
                 unscale_lora_layers(self.text_encoder, lora_scale)
+                print("✅ LoRA层已恢复默认比例")
+            else:
+                print("⚙️ 跳过LoRA调整 (不满足条件)")
+
+
 
         return prompt_embeds, negative_prompt_embeds
 
