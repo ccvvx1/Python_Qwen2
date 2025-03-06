@@ -1459,7 +1459,7 @@ class StableDiffusionPipeline(
                 print(f"   → 提示嵌入形状: {tuple(prompt_embeds.shape)}")
                 if timestep_cond is not None:
                     print(f"   → 时间条件嵌入形状: {tuple(timestep_cond.shape)}")
-                
+                print("使用的unet类型：", self.unet)
                 noise_pred = self.unet(
                     latent_model_input,
                     t,
