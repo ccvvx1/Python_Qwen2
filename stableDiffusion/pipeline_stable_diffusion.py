@@ -34,7 +34,7 @@ from diffusers.utils import (
     scale_lora_layers,
     unscale_lora_layers,
 )
-from diffusers.utils.torch_utils import randn_tensor
+from torch_utils import randn_tensor
 from pipeline_utils import DiffusionPipeline, StableDiffusionMixin
 from pipeline_output import StableDiffusionPipelineOutput
 from safety_checker import StableDiffusionSafetyChecker
@@ -912,26 +912,68 @@ class StableDiffusionPipeline(
                 )
 
     def prepare_latents(self, batch_size, num_channels_latents, height, width, dtype, device, generator, latents=None):
-        shape = (
-            batch_size,
-            num_channels_latents,
-            int(height) // self.vae_scale_factor,
-            int(width) // self.vae_scale_factor,
-        )
-        if isinstance(generator, list) and len(generator) != batch_size:
-            raise ValueError(
-                f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
-                f" size of {batch_size}. Make sure the batch size matches the length of the generators."
-            )
+    # def ok23432():
+        print("\n[Latent Generation] 开始潜在变量初始化")
+        
+        # 计算潜在变量形状
+        print("\n[阶段1] 形状计算")
+        h = int(height) // self.vae_scale_factor
+        w = int(width) // self.vae_scale_factor
+        shape = (batch_size, num_channels_latents, h, w)
+        print(f"✅ 潜在空间形状: {shape}")
+        print(f"   → 原始分辨率: {height}x{width}")
+        print(f"   → VAE缩放因子: {self.vae_scale_factor}")
+        print(f"   → 缩放后分辨率: {h}x{w}")
+        print(f"   → 通道数: {num_channels_latents}")
+        print(f"   → 批次大小: {batch_size}")
 
-        if latents is None:
-            latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        # 验证生成器配置
+        print("\n[阶段2] 随机生成器验证")
+        if isinstance(generator, list):
+            print(f"🔍 检测到生成器列表 (长度: {len(generator)})")
+            if len(generator) != batch_size:
+                print(f"❌ 不匹配: 生成器数量({len(generator)}) ≠ 批次大小({batch_size})")
+                raise ValueError(
+                    f"生成器数量与批次大小不匹配: {len(generator)} vs {batch_size}"
+                )
+            else:
+                print("✅ 生成器列表与批次大小匹配")
         else:
-            latents = latents.to(device)
+            print(f"⚙️ 使用单一生成器 (类型: {type(generator).__name__})")
 
-        # scale the initial noise by the standard deviation required by the scheduler
-        latents = latents * self.scheduler.init_noise_sigma
+        # 初始化潜在变量
+        print("\n[阶段3] 噪声生成")
+        if latents is None:
+            print("🔄 生成新潜在变量")
+            print(f"   → 设备: {device}")
+            print(f"   → 数据类型: {dtype}")
+            latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+            print(f"✅ 初始潜在变量统计:")
+            print(f"   → 形状: {latents.shape}")
+            print(f"   → 均值: {latents.mean().item():.4f}")
+            print(f"   → 标准差: {latents.std().item():.4f}")
+            print(f"   → 值域: [{latents.min().item():.4f}, {latents.max().item():.4f}]")
+        else:
+            print("⚡ 使用预生成潜在变量")
+            print(f"   → 输入形状: {latents.shape}")
+            print(f"   → 原始设备: {latents.device} → 目标设备: {device}")
+            latents = latents.to(device)
+            print(f"✅ 迁移后潜在变量设备: {latents.device}")
+
+        # 噪声缩放
+        print("\n[阶段4] 噪声缩放")
+        init_noise_sigma = self.scheduler.init_noise_sigma
+        print(f"🔧 应用初始噪声缩放系数: {init_noise_sigma:.4f}")
+        print(f"   → 缩放前均值: {latents.mean().item():.4f}")
+        latents = latents * init_noise_sigma
+        print(f"✅ 缩放后统计:")
+        print(f"   → 均值: {latents.mean().item():.4f}")
+        print(f"   → 标准差: {latents.std().item():.4f}")
+        print(f"   → 值域: [{latents.min().item():.4f}, {latents.max().item():.4f}]")
+
+        print("\n[Latent Generation] 初始化完成 ✅\n")
         return latents
+
 
     # Copied from diffusers.pipelines.latent_consistency_models.pipeline_latent_consistency_text2img.LatentConsistencyModelPipeline.get_guidance_scale_embedding
     def get_guidance_scale_embedding(
