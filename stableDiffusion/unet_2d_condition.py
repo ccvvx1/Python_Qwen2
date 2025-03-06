@@ -224,24 +224,35 @@ class UNet2DConditionModel(
         cross_attention_norm: Optional[str] = None,
         addition_embed_type_num_heads: int = 64,
     ):
-        super().__init__()
-
-        self.sample_size = sample_size
-
-        if num_attention_heads is not None:
-            raise ValueError(
-                "At the moment it is not possible to define the number of attention heads via `num_attention_heads` because of a naming issue as described in https://github.com/huggingface/diffusers/issues/2011#issuecomment-1547958131. Passing `num_attention_heads` will only be supported in diffusers v0.19."
-            )
-
         # If `num_attention_heads` is not defined (which is the case for most models)
         # it will default to `attention_head_dim`. This looks weird upon first reading it and it is.
         # The reason for this behavior is to correct for incorrectly named variables that were introduced
         # when this library was created. The incorrect naming was only discovered much later in https://github.com/huggingface/diffusers/issues/2011#issuecomment-1547958131
         # Changing `attention_head_dim` to `num_attention_heads` for 40,000+ configurations is too backwards breaking
         # which is why we correct for the naming here.
+    # def ok323232():
+        super().__init__()
+        print("\n[UNet Initialization] 开始模型初始化")
+        
+        # 参数有效性验证
+        print("\n[阶段1] 参数校验")
+        self.sample_size = sample_size
+        print(f"✅ 样本尺寸: {sample_size}")
+        
+        if num_attention_heads is not None:
+            error_msg = (
+                "⚠️ 当前版本不支持显式设置num_attention_heads参数\n"
+                "  原因: 参数命名冲突问题 (详见 https://github.com/huggingface/diffusers/issues/2011)\n"
+                "  解决方案: 请使用attention_head_dim参数或等待diffusers v0.19版本"
+            )
+            print(error_msg)
+            raise ValueError(error_msg)
+        
         num_attention_heads = num_attention_heads or attention_head_dim
+        print(f"⚙️ 最终注意力头数: {num_attention_heads}")
 
-        # Check inputs
+        # 配置检查
+        print("\n[阶段2] 配置完整性检查")
         self._check_config(
             down_block_types=down_block_types,
             up_block_types=up_block_types,
@@ -254,14 +265,23 @@ class UNet2DConditionModel(
             attention_head_dim=attention_head_dim,
             num_attention_heads=num_attention_heads,
         )
+        print("✅ 所有配置参数通过校验")
 
-        # input
+        # 输入处理
+        print("\n[阶段3] 输入层构建")
         conv_in_padding = (conv_in_kernel - 1) // 2
+        print(f"🔧 卷积层参数:")
+        print(f"   → 输入通道: {in_channels}")
+        print(f"   → 输出通道: {block_out_channels[0]}")
+        print(f"   → 核大小: {conv_in_kernel}x{conv_in_kernel}")
+        print(f"   → 自动填充计算: ({conv_in_kernel}-1)//2 = {conv_in_padding}")
         self.conv_in = nn.Conv2d(
             in_channels, block_out_channels[0], kernel_size=conv_in_kernel, padding=conv_in_padding
         )
+        print(f"✅ 输入卷积层构建完成: {self.conv_in}")
 
-        # time
+        # 时间嵌入
+        print("\n[阶段4] 时间嵌入配置")
         time_embed_dim, timestep_input_dim = self._set_time_proj(
             time_embedding_type,
             block_out_channels=block_out_channels,
@@ -269,6 +289,11 @@ class UNet2DConditionModel(
             freq_shift=freq_shift,
             time_embedding_dim=time_embedding_dim,
         )
+        print(f"⚙️ 时间投影参数:")
+        print(f"   → 输入维度: {timestep_input_dim}")
+        print(f"   → 嵌入维度: {time_embed_dim}")
+        print(f"   → 频率偏移: {freq_shift or '无'}")
+        print(f"   → 波形转换: {'sin→cos' if flip_sin_to_cos else '保持原始'}")
 
         self.time_embedding = TimestepEmbedding(
             timestep_input_dim,
@@ -277,14 +302,32 @@ class UNet2DConditionModel(
             post_act_fn=timestep_post_act,
             cond_proj_dim=time_cond_proj_dim,
         )
+        print(f"✅ 时间嵌入层构建完成:")
+        print(f"   → 激活函数: {act_fn}")
+        print(f"   → 后处理函数: {timestep_post_act or '无'}")
+        print(f"   → 条件投影维度: {time_cond_proj_dim or '未启用'}")
 
+    # def okew432432432():
+        print("\n[UNet Configuration] 开始高级配置")
+        
+        # 编码器隐藏层投影
+        print("\n[阶段1] 编码器隐藏投影设置")
+        print(f"🔧 参数列表:")
+        print(f"   → encoder_hid_dim_type: {encoder_hid_dim_type}")
+        print(f"   → cross_attention_dim: {cross_attention_dim}")
+        print(f"   → encoder_hid_dim: {encoder_hid_dim}")
         self._set_encoder_hid_proj(
             encoder_hid_dim_type,
             cross_attention_dim=cross_attention_dim,
             encoder_hid_dim=encoder_hid_dim,
         )
+        print("✅ 编码器投影配置完成")
 
-        # class embedding
+        # 类别嵌入配置
+        print("\n[阶段2] 类别嵌入配置")
+        print(f"⚙️ 嵌入类型: {class_embed_type}")
+        print(f"   → 类别数量: {num_class_embeds or '无'}")
+        print(f"   → 投影输入维度: {projection_class_embeddings_input_dim or '未启用'}")
         self._set_class_embedding(
             class_embed_type,
             act_fn=act_fn,
@@ -293,7 +336,13 @@ class UNet2DConditionModel(
             time_embed_dim=time_embed_dim,
             timestep_input_dim=timestep_input_dim,
         )
+        print(f"✅ 类别嵌入维度: {self.class_embedding.out_features if hasattr(self, 'class_embedding') else '未启用'}")
 
+        # 附加嵌入配置
+        print("\n[阶段3] 附加嵌入设置")
+        print(f"🔧 嵌入类型: {addition_embed_type}")
+        print(f"   → 多头数量: {addition_embed_type_num_heads}")
+        print(f"   → 时间嵌入维度: {addition_time_embed_dim}")
         self._set_add_embedding(
             addition_embed_type,
             addition_embed_type_num_heads=addition_embed_type_num_heads,
@@ -305,54 +354,118 @@ class UNet2DConditionModel(
             projection_class_embeddings_input_dim=projection_class_embeddings_input_dim,
             time_embed_dim=time_embed_dim,
         )
+        print(f"✅ 附加嵌入参数: {self.add_embedding.config if hasattr(self, 'add_embedding') else '未启用'}")
 
+        # 时间嵌入激活函数
+        print("\n[阶段4] 激活函数配置")
         if time_embedding_act_fn is None:
+            print("⚙️ 未设置时间嵌入激活函数")
             self.time_embed_act = None
         else:
+            print(f"🔄 初始化激活函数: {time_embedding_act_fn}")
             self.time_embed_act = get_activation(time_embedding_act_fn)
+            print(f"✅ 激活函数对象: {self.time_embed_act}")
 
+        # 初始化网络块
+        print("\n[阶段5] 网络架构构建")
+        print(f"🛠️ 初始化下采样块 ({len(down_block_types)}个)")
         self.down_blocks = nn.ModuleList([])
+        print(f"🛠️ 初始化上采样块 ({len(up_block_types)}个)")
         self.up_blocks = nn.ModuleList([])
+        print(f"📐 中间块交叉注意力配置: {mid_block_only_cross_attention}")
 
+        # 交叉注意力参数处理
+        print("\n[阶段6] 注意力机制参数统一")
         if isinstance(only_cross_attention, bool):
+            print(f"🔧 统一交叉注意力参数 (原值: {only_cross_attention})")
             if mid_block_only_cross_attention is None:
+                print(f"   → 自动设置中间块参数为: {only_cross_attention}")
                 mid_block_only_cross_attention = only_cross_attention
-
             only_cross_attention = [only_cross_attention] * len(down_block_types)
+            print(f"✅ 参数扩展结果: {only_cross_attention}")
+        else:
+            print(f"⚙️ 使用自定义交叉注意力配置: {only_cross_attention}")
 
+    # def ok323232():
+        print("\n[UNet Parameter Uniformization] 开始参数统一化处理")
+        
+        # 中间块交叉注意力默认处理
+        print("\n[阶段1] 中间块配置")
         if mid_block_only_cross_attention is None:
+            print("⚙️ 未指定中间块交叉注意力，设置为默认值False")
             mid_block_only_cross_attention = False
+        print(f"✅ 最终中间块交叉注意力: {mid_block_only_cross_attention}")
 
-        if isinstance(num_attention_heads, int):
-            num_attention_heads = (num_attention_heads,) * len(down_block_types)
+        # 参数扩展处理
+        print("\n[阶段2] 参数维度扩展")
+        param_config = [
+            ("注意力头数(num_attention_heads)", num_attention_heads, len(down_block_types)),
+            ("头维度(attention_head_dim)", attention_head_dim, len(down_block_types)),
+            ("交叉注意力维度(cross_attention_dim)", cross_attention_dim, len(down_block_types)),
+            ("每块层数(layers_per_block)", layers_per_block, len(down_block_types)),
+            ("Transformer层数(transformer_layers_per_block)", transformer_layers_per_block, len(down_block_types))
+        ]
 
-        if isinstance(attention_head_dim, int):
-            attention_head_dim = (attention_head_dim,) * len(down_block_types)
+        for name, value, target_len in param_config:
+            if isinstance(value, int):
+                original = value
+                expanded = (value,) * target_len
+                print(f"🔧 扩展 {name}:")
+                print(f"   → 原始值: {original} → 扩展后: {expanded}")
+                locals()[name.split('(')[0].strip()] = expanded  # 更新变量
+            elif isinstance(value, (list, tuple)):
+                print(f"✅ {name} 已为序列类型: {value}")
 
-        if isinstance(cross_attention_dim, int):
-            cross_attention_dim = (cross_attention_dim,) * len(down_block_types)
-
-        if isinstance(layers_per_block, int):
-            layers_per_block = [layers_per_block] * len(down_block_types)
-
-        if isinstance(transformer_layers_per_block, int):
-            transformer_layers_per_block = [transformer_layers_per_block] * len(down_block_types)
-
+        # 类别嵌入连接处理
+        print("\n[阶段3] 时间嵌入维度调整")
         if class_embeddings_concat:
-            # The time embeddings are concatenated with the class embeddings. The dimension of the
-            # time embeddings passed to the down, middle, and up blocks is twice the dimension of the
-            # regular time embeddings
+            print("🌀 启用类别嵌入连接 (class_embeddings_concat=True)")
+            print(f"   → 基础时间维度: {time_embed_dim} → 块时间维度: {time_embed_dim*2}")
             blocks_time_embed_dim = time_embed_dim * 2
         else:
+            print("⚙️ 使用标准时间嵌入维度")
             blocks_time_embed_dim = time_embed_dim
+        print(f"✅ 最终块时间嵌入维度: {blocks_time_embed_dim}")
 
-        # down
+        # 打印最终配置
+        print("\n📋 统一化后参数列表:")
+        print(f"   → num_attention_heads: {num_attention_heads}")
+        print(f"   → attention_head_dim: {attention_head_dim}")
+        print(f"   → cross_attention_dim: {cross_attention_dim}")
+        print(f"   → layers_per_block: {layers_per_block}")
+        print(f"   → transformer_layers_per_block: {transformer_layers_per_block}")
+        print(f"   → blocks_time_embed_dim: {blocks_time_embed_dim}")
+
+
+#    def ok32424():
+        print("\n[UNet Block Construction] 开始构建网络块")
+        
+        # 下采样块构建
+        print(f"\n▼▼▼ 下采样块构建 ({len(down_block_types)}个) ▼▼▼")
         output_channel = block_out_channels[0]
         for i, down_block_type in enumerate(down_block_types):
+            print(f"\n[下采样块 {i+1}/{len(down_block_types)}] 类型: {down_block_type}")
+            
+            # 通道数配置
             input_channel = output_channel
             output_channel = block_out_channels[i]
             is_final_block = i == len(block_out_channels) - 1
+            print(f"🔧 通道配置:")
+            print(f"   → 输入通道: {input_channel}")
+            print(f"   → 输出通道: {output_channel}")
+            print(f"   → 是否最终块: {'是' if is_final_block else '否'}")
 
+            # 获取下采样块参数
+            print(f"\n⚙️ 块参数详情:")
+            print(f"   ├─ 残差层数: {layers_per_block[i]}")
+            print(f"   ├─ Transformer层数: {transformer_layers_per_block[i]}")
+            print(f"   ├─ 时间嵌入维度: {blocks_time_embed_dim}")
+            print(f"   ├─ 交叉注意力维度: {cross_attention_dim[i]}")
+            print(f"   ├─ 注意力头数: {num_attention_heads[i]}")
+            print(f"   ├─ 注意力头维度: {attention_head_dim[i] or '自动'}")
+            print(f"   └─ 仅交叉注意力: {only_cross_attention[i]}")
+
+            # 构建下采样块
             down_block = get_down_block(
                 down_block_type,
                 num_layers=layers_per_block[i],
@@ -380,8 +493,18 @@ class UNet2DConditionModel(
                 dropout=dropout,
             )
             self.down_blocks.append(down_block)
+            print(f"✅ 块构建完成 → 模块结构: {down_block.__class__.__name__}")
 
-        # mid
+        # 中间块构建
+        print(f"\n▲▲▲ 中间块构建 ▲▲▲")
+        print(f"🔧 配置参数:")
+        print(f"   → 类型: {mid_block_type}")
+        print(f"   → 输入通道: {block_out_channels[-1]}")
+        print(f"   → 时间嵌入维度: {blocks_time_embed_dim}")
+        print(f"   → 交叉注意力维度: {cross_attention_dim[-1]}")
+        print(f"   → 注意力头数: {num_attention_heads[-1]}")
+        print(f"   → 仅交叉注意力: {mid_block_only_cross_attention}")
+
         self.mid_block = get_mid_block(
             mid_block_type,
             temb_channels=blocks_time_embed_dim,
@@ -404,6 +527,8 @@ class UNet2DConditionModel(
             attention_head_dim=attention_head_dim[-1],
             dropout=dropout,
         )
+        print(f"✅ 中间块构建完成 → 模块结构: {self.mid_block.__class__.__name__}")                              
+
 
         # count how many layers upsample the images
         self.num_upsamplers = 0
@@ -1101,17 +1226,37 @@ class UNet2DConditionModel(
         # The overall upsampling factor is equal to 2 ** (# num of upsampling layers).
         # However, the upsampling interpolation output size can be forced to fit any upsampling size
         # on the fly if necessary.
-        default_overall_up_factor = 2**self.num_upsamplers
-
-        # upsample size should be forwarded when sample is not a multiple of `default_overall_up_factor`
+    # def ok23423():
+        print("\n[Upsample Check] 开始上采样尺寸检查")
+        
+        # 计算默认上采样因子
+        default_overall_up_factor = 2 ** self.num_upsamplers
+        print(f"🔍 计算总上采样因子: 2^{self.num_upsamplers} = {default_overall_up_factor}")
+        
+        # 初始化标志和尺寸
         forward_upsample_size = False
         upsample_size = None
+        print(f"⚙️ 初始状态: forward_upsample_size={forward_upsample_size}, upsample_size={upsample_size}")
 
-        for dim in sample.shape[-2:]:
-            if dim % default_overall_up_factor != 0:
-                # Forward upsample size to force interpolation output size.
+        # 检查各维度可除性
+        print("\n[阶段1] 维度可除性验证")
+        sample_dims = sample.shape[-2:]
+        print(f"📏 输入样本最后两维: {sample_dims}")
+        
+        for idx, dim in enumerate(sample_dims):
+            remainder = dim % default_overall_up_factor
+            print(f"   → 维度 {['高度', '宽度'][idx]}: {dim} % {default_overall_up_factor} = {remainder}")
+            
+            if remainder != 0:
+                print(f"❗ 检测到不可整除维度，标记需要调整上采样尺寸")
                 forward_upsample_size = True
-                break
+                break  # 任意维度不匹配即触发
+        
+        # 最终判断
+        print("\n[阶段2] 上采样策略决策")
+        if forward_upsample_size:
+            print(f"🚨 启用强制尺寸调整 (forward_upsample_size=True)")
+
 
         # ensure attention_mask is a bias, and give it a singleton query_tokens dimension
         # expects mask of shape:
@@ -1121,33 +1266,72 @@ class UNet2DConditionModel(
         # this helps to broadcast it as a bias over attention scores, which will be in one of the following shapes:
         #   [batch,  heads, query_tokens, key_tokens] (e.g. torch sdp attn)
         #   [batch * heads, query_tokens, key_tokens] (e.g. xformers or classic attn)
+        # assume that mask is expressed as:
+        #   (1 = keep,      0 = discard)
+        # convert mask into a bias that can be added to attention scores:
+        #       (keep = +0,     discard = -10000.0)
+    # def ok23432():
+        print("\n[Sample Processing] 开始样本预处理流程")
+        
+        # 注意力掩码处理
+        print("\n[阶段1] 注意力掩码转换")
         if attention_mask is not None:
-            # assume that mask is expressed as:
-            #   (1 = keep,      0 = discard)
-            # convert mask into a bias that can be added to attention scores:
-            #       (keep = +0,     discard = -10000.0)
+            print(f"🔧 原始注意力掩码 shape: {attention_mask.shape}, dtype: {attention_mask.dtype}")
             attention_mask = (1 - attention_mask.to(sample.dtype)) * -10000.0
+            print(f"   → 转换后值域: [{attention_mask.min().item():.1f}, {attention_mask.max().item():.1f}]")
             attention_mask = attention_mask.unsqueeze(1)
+            print(f"✅ 最终注意力掩码 shape: {attention_mask.shape}")
+        else:
+            print("⏭️ 未提供注意力掩码，跳过处理")
 
-        # convert encoder_attention_mask to a bias the same way we do for attention_mask
+        # 编码器注意力掩码处理
+        print("\n[阶段2] 编码器注意力掩码转换")
         if encoder_attention_mask is not None:
+            print(f"🔧 原始编码器掩码 shape: {encoder_attention_mask.shape}, dtype: {encoder_attention_mask.dtype}")
             encoder_attention_mask = (1 - encoder_attention_mask.to(sample.dtype)) * -10000.0
+            print(f"   → 转换后值域: [{encoder_attention_mask.min().item():.1f}, {encoder_attention_mask.max().item():.1f}]")
             encoder_attention_mask = encoder_attention_mask.unsqueeze(1)
+            print(f"✅ 最终编码器掩码 shape: {encoder_attention_mask.shape}")
+        else:
+            print("⏭️ 未提供编码器注意力掩码，跳过处理")
 
-        # 0. center input if necessary
+        # 输入中心化处理
+        print("\n[阶段3] 输入归一化")
         if self.config.center_input_sample:
+            print(f"⚙️ 执行输入中心化 (配置: center_input_sample=True)")
+            print(f"   → 原始输入值域: [{sample.min().item():.2f}, {sample.max().item():.2f}]")
             sample = 2 * sample - 1.0
+            print(f"✅ 中心化后值域: [{sample.min().item():.2f}, {sample.max().item():.2f}]")
+        else:
+            print("⏭️ 跳过输入中心化 (配置: center_input_sample=False)")
 
-        # 1. time
+        # 时间嵌入处理
+        print("\n[阶段4] 时间嵌入生成")
         t_emb = self.get_time_embed(sample=sample, timestep=timestep)
+        print(f"⏱️ 基础时间嵌入 shape: {t_emb.shape}")
         emb = self.time_embedding(t_emb, timestep_cond)
+        print(f"✅ 增强时间嵌入 shape: {emb.shape} | dtype: {emb.dtype}")
 
+        # 类别嵌入处理
+        print("\n[阶段5] 类别嵌入处理")
         class_emb = self.get_class_embed(sample=sample, class_labels=class_labels)
         if class_emb is not None:
+            print(f"🏷️ 类别嵌入 shape: {class_emb.shape}")
             if self.config.class_embeddings_concat:
+                print(f"🔀 拼接方式: concat(沿最后一维)")
+                print(f"   → 原嵌入维度: {emb.shape[-1]}")
+                print(f"   → 类别嵌入维度: {class_emb.shape[-1]}")
                 emb = torch.cat([emb, class_emb], dim=-1)
+                print(f"✅ 拼接后维度: {emb.shape[-1]}")
             else:
+                print(f"➕ 合并方式: 元素相加")
+                print(f"   → 原嵌入值域: [{emb.min().item():.2f}, {emb.max().item():.2f}]")
                 emb = emb + class_emb
+                print(f"✅ 合并后值域: [{emb.min().item():.2f}, {emb.max().item():.2f}]")
+        else:
+            print("⏭️ 未提供类别嵌入，跳过处理")
+
+
 
         aug_emb = self.get_aug_embed(
             emb=emb, encoder_hidden_states=encoder_hidden_states, added_cond_kwargs=added_cond_kwargs
