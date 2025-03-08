@@ -27,4 +27,4 @@ os.environ['DISPLAY'] = ':1'
 # export LANGUAGE=zh_CN:zh:en_US:en
 
 
-# google-chrome --no-sandbox --display=:99 --window-size=1280,1024
+# export LANG=zh_CN.UTF-8 && export LANGUAGE=zh_CN:zh:en_US:en && google-chrome --no-sandbox --display=:99 --window-size=1280,1024
