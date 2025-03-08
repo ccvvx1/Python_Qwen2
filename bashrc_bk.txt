@@ -1,0 +1,44 @@
+# 检查交互式 Shell
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+# 历史记录配置
+HISTCONTROL=ignoreboth
+shopt -s histappend
+HISTSIZE=1000
+HISTFILESIZE=2000
+
+# 终端窗口大小自适应
+shopt -s checkwinsize
+
+# 彩色 ls 输出
+if [ -x /usr/bin/dircolors ]; then
+    test -r \~/.dircolors && eval "$(dircolors -b \~/.dircolors)" || eval "$(dircolors -b)"
+    alias ls='ls --color=auto'
+    alias grep='grep --color=auto'
+fi
+
+# 提示符和别名
+PS1='\w\$ '
+PS1='$$\033[01;34m$$\w$$\033[00m$$\$ '  # 蓝色路径 + 默认色提示符
+
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+
+# 启用补全
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+# 彩色提示符
+# PS1='$$\033[01;32m$$\u@\h$$\033[00m$$:$$\033[01;34m$$\w$$\033[00m$$\$ '
+
+
+
+export PATH=/usr/lib/code-server/lib/vscode/bin/remote-cli:/opt/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/tools/node/bin:/tools/google-cloud-sdk/bin:/usr/local/go/bin::/usr/local/go/bin
