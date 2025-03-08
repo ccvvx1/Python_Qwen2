@@ -51,7 +51,7 @@ os.environ['DISPLAY'] = ':1'
 # tar -xzvf nginx-1.27.4.tar.gz
 # cd nginx-1.27.4
 
-    --add-module=/content/jsproxy/lua-nginx-module \
+    # --add-module=/content/jsproxy/lua-nginx-module \
 
 # # 重新配置并添加模块
 # ./configure \
