@@ -1,0 +1,40 @@
+2025/03/08 15:16:17 [emerg] 286112#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:16:17 [emerg] 286112#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:16:17 [emerg] 286112#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:16:17 [emerg] 286112#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:16:17 [emerg] 286112#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:16:17 [emerg] 286112#0: still could not bind()
+2025/03/08 15:17:47 [emerg] 287044#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:17:47 [emerg] 287044#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:17:47 [emerg] 287044#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:17:47 [emerg] 287044#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:17:47 [emerg] 287044#0: bind() to 0.0.0.0:80 failed (98: Address already in use)
+2025/03/08 15:17:47 [emerg] 287044#0: still could not bind()
+2025/03/08 15:22:10 [emerg] 289602#0: open() "/home/jsproxy/openresty/nginx/nginx.conf" failed (2: No such file or directory)
+2025/03/08 15:33:31 [emerg] 298814#0: open() "/home/jsproxy/openresty/nginx/nginx.conf" failed (2: No such file or directory)
+2025/03/08 15:34:01 [emerg] 299153#0: bind() to 0.0.0.0:8080 failed (98: Address already in use)
+2025/03/08 15:34:01 [emerg] 299153#0: bind() to 0.0.0.0:8080 failed (98: Address already in use)
+2025/03/08 15:34:01 [emerg] 299153#0: bind() to 0.0.0.0:8080 failed (98: Address already in use)
+2025/03/08 15:34:01 [emerg] 299153#0: bind() to 0.0.0.0:8080 failed (98: Address already in use)
+2025/03/08 15:34:01 [emerg] 299153#0: bind() to 0.0.0.0:8080 failed (98: Address already in use)
+2025/03/08 15:34:01 [emerg] 299153#0: still could not bind()
+2025/03/08 15:34:46 [notice] 299648#0: signal process started
+2025/03/08 15:36:57 [notice] 300894#0: signal process started
+2025/03/08 16:38:29 [notice] 337976#0: signal process started
+2025/03/08 16:40:13 [emerg] 339067#0: unknown "_ver" variable
+2025/03/08 16:40:38 [emerg] 339336#0: unknown "_ver" variable
+2025/03/08 16:41:04 [emerg] 339612#0: no "events" section in configuration
+2025/03/08 16:41:16 [emerg] 339753#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:41:16 [emerg] 339753#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:41:16 [emerg] 339753#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:41:16 [emerg] 339753#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:41:16 [emerg] 339753#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:41:16 [emerg] 339753#0: still could not bind()
+2025/03/08 16:41:21 [notice] 339829#0: signal process started
+2025/03/08 16:41:21 [error] 339829#0: open() "/home/jsproxy/openresty/nginx/logs/nginx.pid" failed (2: No such file or directory)
+2025/03/08 16:41:34 [emerg] 339970#0: unknown "_ver" variable
+2025/03/08 16:41:36 [emerg] 340005#0: unknown "_ver" variable
+2025/03/08 16:42:17 [emerg] 340443#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:42:17 [emerg] 340443#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:42:17 [emerg] 340443#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:42:17 [emerg] 340443#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
