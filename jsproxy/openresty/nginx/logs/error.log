@@ -38,3 +38,6 @@
 2025/03/08 16:42:17 [emerg] 340443#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
 2025/03/08 16:42:17 [emerg] 340443#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
 2025/03/08 16:42:17 [emerg] 340443#0: bind() to 0.0.0.0:8099 failed (98: Address already in use)
+2025/03/08 16:48:30 [notice] 344934#0: signal process started
+2025/03/08 16:49:10 [notice] 345385#0: signal process started
+2025/03/08 16:49:10 [error] 345385#0: open() "/home/jsproxy/openresty/nginx/logs/nginx.pid" failed (2: No such file or directory)

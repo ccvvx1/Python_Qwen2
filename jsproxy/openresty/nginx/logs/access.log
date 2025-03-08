@@ -106,3 +106,13 @@
 01	2025-03-08T16:43:35+00:00	127.0.0.1	0.000	GET	/404.html	edinburgh-h-pleasant-suggestion.trycloudflare.com	200	
 01	2025-03-08T16:43:35+00:00	127.0.0.1	0.000	GET	/404.html	edinburgh-h-pleasant-suggestion.trycloudflare.com	200	
 01	2025-03-08T16:43:35+00:00	127.0.0.1	0.000	GET	/404.html	edinburgh-h-pleasant-suggestion.trycloudflare.com	200	
+01	2025-03-08T16:46:26+00:00	127.0.0.1	0.000	GET	/404.html	edinburgh-h-pleasant-suggestion.trycloudflare.com	200	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36
+01	2025-03-08T16:46:27+00:00	127.0.0.1	0.000	GET	/404.html	edinburgh-h-pleasant-suggestion.trycloudflare.com	200	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36
+01	2025-03-08T16:46:29+00:00	127.0.0.1	0.000	GET	/sw.js	edinburgh-h-pleasant-suggestion.trycloudflare.com	304	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36
+01	2025-03-08T16:46:39+00:00	127.0.0.1	0.000	GET	/404.html	edinburgh-h-pleasant-suggestion.trycloudflare.com	200	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36
+01	2025-03-08T16:46:40+00:00	127.0.0.1	0.000	GET	/404.html	edinburgh-h-pleasant-suggestion.trycloudflare.com	200	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36
+01	2025-03-08T16:46:41+00:00	127.0.0.1	0.000	GET	/sw.js	edinburgh-h-pleasant-suggestion.trycloudflare.com	304	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36
+01	2025-03-08T16:48:06+00:00	127.0.0.1	0.000	GET	/404.html	localhost:8399	200	Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36
+01	2025-03-08T16:48:07+00:00	127.0.0.1	0.000	GET	/404.html	localhost:8399	200	Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36
+01	2025-03-08T16:48:08+00:00	127.0.0.1	0.000	GET	/sw.js	localhost:8399	304	Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36
+01	2025-03-08T16:48:49+00:00	127.0.0.1	0.000	GET	/sw.js	localhost:8399	304	Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36
