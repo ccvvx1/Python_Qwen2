@@ -67,3 +67,14 @@ os.environ['DISPLAY'] = ':1'
 # lsof -i :80
 # https://raw.githubusercontent.com/EtherDream/jsproxy-bin/master/Linux-x86_64/openresty-1.15.8.1.tar.gz
 # /home/jsproxy/openresty/nginx/sbin/nginx -c /home/jsproxy/server/nginx.conf -p /home/jsproxy/server/nginx
+
+# 下载最新预编译版（2025年3月更新）
+wget https://github.com/MetaCubeX/Clash.Meta/releases/download/v2.8.9/clash.meta-linux-amd64-v2.8.9.gz
+gunzip clash.meta-linux-amd64-v2.8.9.gz
+mv clash.meta-linux-amd64-v2.8.9 /usr/local/bin/clash-meta
+chmod +x /usr/local/bin/clash-meta
+
+# 创建系统用户
+useradd -r -s /usr/sbin/nologin -M clash
+mkdir -p /etc/clash-meta /var/log/clash
+chown -R clash:clash /etc/clash-meta /var/log/clash
