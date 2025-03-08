@@ -66,3 +66,4 @@ os.environ['DISPLAY'] = ':1'
 
 # lsof -i :80
 # https://raw.githubusercontent.com/EtherDream/jsproxy-bin/master/Linux-x86_64/openresty-1.15.8.1.tar.gz
+# /home/jsproxy/openresty/nginx/sbin/nginx -c /home/jsproxy/server/nginx.conf -p /home/jsproxy/server/nginx
