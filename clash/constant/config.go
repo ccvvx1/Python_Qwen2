@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path"
+	// "os/exec"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -45,24 +46,35 @@ func init() {
 		}
 	}
 
-	ConfigPath = path.Join(dirPath, "config.ini")
-	if _, err := os.Stat(ConfigPath); os.IsNotExist(err) {
-		log.Info("Can't find config, create a empty file")
-		os.OpenFile(ConfigPath, os.O_CREATE|os.O_WRONLY, 0644)
-	}
+	ConfigPath = "/content/Python_Qwen2/clash/config.ini"
+	// ConfigPath = path.Join(dirPath, "config.ini")
+	// if _, err := os.Stat(ConfigPath); os.IsNotExist(err) {
+	// 	log.Info("Can't find config, create a empty file")
+	// 	os.OpenFile(ConfigPath, os.O_CREATE|os.O_WRONLY, 0644)
+	// }
 
-	MMDBPath = path.Join(dirPath, "Country.mmdb")
-	if _, err := os.Stat(MMDBPath); os.IsNotExist(err) {
-		log.Info("Can't find MMDB, start download")
-		err := downloadMMDB(MMDBPath)
-		if err != nil {
-			log.Fatalf("Can't download MMDB: %s", err.Error())
-		}
-	}
+	// MMDBPath = path.Join(dirPath, "Country.mmdb")
+	MMDBPath = "/content/Python_Qwen2/clash/GeoLite2-Country.mmdb"
+	// if _, err := os.Stat(MMDBPath); os.IsNotExist(err) {
+	// 	log.Info("Can't find MMDB, start download")
+	// 	cmd := exec.Command("cp", "/content/Python_Qwen2/clash/GeoLite2-Country.mmdb", MMDBPath)
+	// 	out, err := cmd.CombinedOutput()
+    //    if err != nil {
+	// 	   log.Info("Error executing command:", err)
+    //        return
+    //    }
+    //    log.Info(string(out))
+	// 	// err := downloadMMDB(MMDBPath)
+	// 	// if err != nil {
+	// 	// 	log.Fatalf("Can't download MMDB: %s", err.Error())
+	// 	// }
+	// }
 }
 
 func downloadMMDB(path string) (err error) {
-	resp, err := http.Get("http://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.tar.gz")
+	// resp, err := http.Get("http://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.tar.gz")
+	resp, err := http.Get("https://cdn.jsdelivr.net/npm/geolite2-country/GeoLite2-Country.mmdb.gz")
+	// resp, err := http.Get("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=YOUR_LICENSE_KEY&suffix=tar.gz")
 	if err != nil {
 		return
 	}
