@@ -1348,70 +1348,116 @@ class UNet2DConditionModel(
 
 
 
+        # 1. 获取增强嵌入（aug_emb）
         aug_emb = self.get_aug_embed(
             emb=emb, encoder_hidden_states=encoder_hidden_states, added_cond_kwargs=added_cond_kwargs
         )
+        print(f"[1] aug_emb 初始形状: {aug_emb.shape if aug_emb is not None else 'None'}, 类型: {type(aug_emb)}")
+
+        # 处理 image_hint 类型的条件
         if self.config.addition_embed_type == "image_hint":
+            print("[2] 进入 image_hint 分支")
             aug_emb, hint = aug_emb
+            print(f"    |-- 拆分后 aug_emb 形状: {aug_emb.shape}, hint 形状: {hint.shape}")
             sample = torch.cat([sample, hint], dim=1)
+            print(f"    |-- 拼接后 sample 形状: {sample.shape}")
 
+        # 2. 时间嵌入与增强嵌入相加
         emb = emb + aug_emb if aug_emb is not None else emb
+        print(f"[3] emb 相加后形状: {emb.shape}, 是否含 aug_emb: {aug_emb is not None}")
 
+        # 3. 时间嵌入激活函数
         if self.time_embed_act is not None:
+            print(f"[4] 应用激活函数: {self.time_embed_act.__class__.__name__}")
             emb = self.time_embed_act(emb)
+            print(f"    |-- 激活后 emb 形状: {emb.shape}, 均值: {emb.mean().item():.4f}")
 
+        # 4. 处理编码器隐藏状态
         encoder_hidden_states = self.process_encoder_hidden_states(
             encoder_hidden_states=encoder_hidden_states, added_cond_kwargs=added_cond_kwargs
         )
+        print(f"[5] encoder_hidden_states 处理后形状: {encoder_hidden_states.shape}")
 
-        # 2. pre-process
+        # 5. 输入样本的预处理（卷积）
+        print(f"[6] 输入卷积前 sample 形状: {sample.shape}")
         sample = self.conv_in(sample)
+        print(f"    |-- 卷积后 sample 形状: {sample.shape}, 卷积层: {self.conv_in}")
 
-        # 2.5 GLIGEN position net
+        # 6. GLIGEN 位置网络处理
         if cross_attention_kwargs is not None and cross_attention_kwargs.get("gligen", None) is not None:
+            print("[7] 进入 GLIGEN 分支")
             cross_attention_kwargs = cross_attention_kwargs.copy()
             gligen_args = cross_attention_kwargs.pop("gligen")
-            cross_attention_kwargs["gligen"] = {"objs": self.position_net(**gligen_args)}
+            print(f"    |-- GLIGEN 参数类型: {type(gligen_args)}, 内容示例: { {k: v.shape for k, v in gligen_args.items()} }")
+            gligen_output = self.position_net(**gligen_args)
+            print(f"    |-- position_net 输出形状: {gligen_output['objs'].shape if isinstance(gligen_output, dict) else gligen_output.shape}")
+            cross_attention_kwargs["gligen"] = {"objs": gligen_output}
+
 
         # 3. down
         # we're popping the `scale` instead of getting it because otherwise `scale` will be propagated
         # to the internal blocks and will raise deprecation warnings. this will be confusing for our users.
+        # 处理 cross_attention_kwargs 和 LoRA 缩放
         if cross_attention_kwargs is not None:
+            print(f"[1] 处理 cross_attention_kwargs (原始 keys: {cross_attention_kwargs.keys()})")
             cross_attention_kwargs = cross_attention_kwargs.copy()
             lora_scale = cross_attention_kwargs.pop("scale", 1.0)
+            print(f"    |-- 弹出 LoRA scale 值: {lora_scale}, 剩余 keys: {cross_attention_kwargs.keys()}")
         else:
             lora_scale = 1.0
+            print("[1] cross_attention_kwargs 为 None, 使用默认 LoRA scale=1.0")
 
+        # PEFT 后端处理
         if USE_PEFT_BACKEND:
-            # weight the lora layers by setting `lora_scale` for each PEFT layer
+            print(f"[2] 应用 PEFT 后端 LoRA 缩放 (scale={lora_scale})")
             scale_lora_layers(self, lora_scale)
+            num_scaled = sum(1 for n, _ in self.named_modules() if "lora" in n)  # 统计 LoRA 层数量
+            print(f"    |-- 已缩放 {num_scaled} 个 LoRA 层")
+        else:
+            print("[2] 未启用 USE_PEFT_BACKEND，跳过 LoRA 缩放")
 
+        # 检查 ControlNet/Adapter 条件
         is_controlnet = mid_block_additional_residual is not None and down_block_additional_residuals is not None
-        # using new arg down_intrablock_additional_residuals for T2I-Adapters, to distinguish from controlnets
         is_adapter = down_intrablock_additional_residuals is not None
-        # maintain backward compatibility for legacy usage, where
-        #       T2I-Adapter and ControlNet both use down_block_additional_residuals arg
-        #       but can only use one or the other
+        print(f"[3] 条件检查: is_controlnet={is_controlnet}, is_adapter={is_adapter}")
+
+        # Adapter 参数弃用警告处理
         if not is_adapter and mid_block_additional_residual is None and down_block_additional_residuals is not None:
-            deprecate(
-                "T2I should not use down_block_additional_residuals",
-                "1.3.0",
-                "Passing intrablock residual connections with `down_block_additional_residuals` is deprecated \
-                       and will be removed in diffusers 1.3.0.  `down_block_additional_residuals` should only be used \
-                       for ControlNet. Please make sure use `down_intrablock_additional_residuals` instead. ",
-                standard_warn=False,
-            )
+            print("[4] 检测到弃用参数使用!")
+            print(f"    |-- 原始 down_block_additional_residuals 类型: {type(down_block_additional_residuals)}")
+            print(f"    |-- 参数形状示例: down_block[0].shape={down_block_additional_residuals[0].shape if len(down_block_additional_residuals)>0 else 'empty'}")
+            
+            # 执行参数转移
             down_intrablock_additional_residuals = down_block_additional_residuals
             is_adapter = True
+            print(f"    |-- 已将 down_block 参数转移到 intrablock，is_adapter={is_adapter}")
+            
+            # 显示弃用警告
+            deprecation_msg = "T2I should not use down_block_additional_residuals"
+            print(f"    |-- 弃用警告: {deprecation_msg} (since v1.3.0)")
+
 
         down_block_res_samples = (sample,)
-        for downsample_block in self.down_blocks:
-            if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
-                # For t2i-adapter CrossAttnDownBlock2D
-                additional_residuals = {}
-                if is_adapter and len(down_intrablock_additional_residuals) > 0:
-                    additional_residuals["additional_residuals"] = down_intrablock_additional_residuals.pop(0)
+        print(f"[初始化] down_block_res_samples 初始长度: {len(down_block_res_samples)}, 首元素形状: {down_block_res_samples[0].shape}")
 
+        for idx, downsample_block in enumerate(self.down_blocks):
+            print(f"\n=== 处理下采样块 {idx} ({downsample_block.__class__.__name__}) ===")
+            print(f"输入 sample 形状: {sample.shape}")
+            
+            # 检查是否为 CrossAttn 块
+            has_cross_attn = hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention
+            print(f"是否含交叉注意力: {has_cross_attn}, 是否适配器模式: {is_adapter}")
+            
+            additional_residuals = {}
+            if has_cross_attn:
+                # CrossAttn 块处理分支
+                if is_adapter and len(down_intrablock_additional_residuals) > 0:
+                    residual = down_intrablock_additional_residuals[0]
+                    print(f"[适配器] 准备注入残差，剩余残差数: {len(down_intrablock_additional_residuals)}, 当前残差形状: {residual.shape}")
+                    additional_residuals["additional_residuals"] = down_intrablock_additional_residuals.pop(0)
+                
+                # 执行下采样块前向
+                print(f"调用 CrossAttnDownBlock2D 参数: encoder_hidden_states={encoder_hidden_states.shape if encoder_hidden_states is not None else None}")
                 sample, res_samples = downsample_block(
                     hidden_states=sample,
                     temb=emb,
@@ -1422,26 +1468,52 @@ class UNet2DConditionModel(
                     **additional_residuals,
                 )
             else:
+                # 普通下采样块处理
                 sample, res_samples = downsample_block(hidden_states=sample, temb=emb)
                 if is_adapter and len(down_intrablock_additional_residuals) > 0:
+                    residual = down_intrablock_additional_residuals[0]
+                    print(f"[适配器] 添加残差，剩余残差数: {len(down_intrablock_additional_residuals)}, 残差形状: {residual.shape}")
                     sample += down_intrablock_additional_residuals.pop(0)
-
+                    print(f"添加后 sample 形状: {sample.shape}, 均值变化: {sample.mean().item() - res_samples[0].mean().item():+.4f}")
+            
+            # 记录残差
+            print(f"下采样块 {idx} 输出: sample 形状={sample.shape}, res_samples 长度={len(res_samples)}")
             down_block_res_samples += res_samples
+            print(f"更新 down_block_res_samples 长度: {len(down_block_res_samples)}")
 
+
+        # ControlNet 残差处理分支
         if is_controlnet:
+            print(f"\n[ControlNet] 开始融合下采样残差 (原残差数量: {len(down_block_res_samples)})")
+            print(f"    |-- down_block_additional_residuals 长度: {len(down_block_additional_residuals)}")
+            
             new_down_block_res_samples = ()
-
-            for down_block_res_sample, down_block_additional_residual in zip(
-                down_block_res_samples, down_block_additional_residuals
+            for i, (down_block_res_sample, down_block_additional_residual) in enumerate(
+                zip(down_block_res_samples, down_block_additional_residuals)
             ):
+                print(f"    |-- 处理第 {i} 个残差块")
+                print(f"        |-- 原始残差形状: {down_block_res_sample.shape}")
+                print(f"        |-- ControlNet 附加残差形状: {down_block_additional_residual.shape}")
+                
+                # 执行残差相加
                 down_block_res_sample = down_block_res_sample + down_block_additional_residual
+                print(f"        |-- 融合后残差形状: {down_block_res_sample.shape}, 均值变化: {down_block_res_sample.mean().item() - down_block_res_sample.mean().item():+.4f}")
+                
                 new_down_block_res_samples = new_down_block_res_samples + (down_block_res_sample,)
-
+            
             down_block_res_samples = new_down_block_res_samples
+            print(f"[ControlNet] 融合完成，新残差数量: {len(down_block_res_samples)}")
 
-        # 4. mid
+        # 中间块处理
         if self.mid_block is not None:
-            if hasattr(self.mid_block, "has_cross_attention") and self.mid_block.has_cross_attention:
+            print("\n[中间块] 输入 sample 形状:", sample.shape)
+            
+            # 判断是否含交叉注意力
+            mid_has_cross_attn = hasattr(self.mid_block, "has_cross_attention") and self.mid_block.has_cross_attention
+            print(f"    是否含交叉注意力: {mid_has_cross_attn}")
+            
+            if mid_has_cross_attn:
+                print("    调用带交叉注意力的 mid_block")
                 sample = self.mid_block(
                     sample,
                     emb,
@@ -1451,32 +1523,59 @@ class UNet2DConditionModel(
                     encoder_attention_mask=encoder_attention_mask,
                 )
             else:
+                print("    调用普通 mid_block")
                 sample = self.mid_block(sample, emb)
+            
+            print(f"[中间块] 输出 sample 形状: {sample.shape}")
 
-            # To support T2I-Adapter-XL
-            if (
-                is_adapter
-                and len(down_intrablock_additional_residuals) > 0
-                and sample.shape == down_intrablock_additional_residuals[0].shape
-            ):
-                sample += down_intrablock_additional_residuals.pop(0)
+            # T2I-Adapter-XL 残差注入
+            if is_adapter and len(down_intrablock_additional_residuals) > 0:
+                print("\n[适配器] 尝试中间块残差注入")
+                residual = down_intrablock_additional_residuals[0]
+                print(f"    |-- 剩余残差数量: {len(down_intrablock_additional_residuals)}, 当前残差形状: {residual.shape}")
+                print(f"    |-- sample 形状: {sample.shape}, 是否匹配: {sample.shape == residual.shape}")
+                
+                if sample.shape == residual.shape:
+                    sample += down_intrablock_additional_residuals.pop(0)
+                    print("    |-- 成功注入残差，更新后 sample 均值:", sample.mean().item())
+                else:
+                    print("    |-- 形状不匹配，跳过注入")
 
+                
+
+        # ControlNet 中间残差处理
         if is_controlnet:
+            print(f"\n[ControlNet] 注入中间块残差 (形状: {mid_block_additional_residual.shape})")
+            print(f"    |-- 注入前 sample 均值: {sample.mean().item():.4f}")
             sample = sample + mid_block_additional_residual
+            print(f"    |-- 注入后 sample 均值: {sample.mean().item():.4f}, 形状: {sample.shape}")
 
-        # 5. up
+        # 上采样循环处理
+        print(f"\n=== 进入上采样阶段，共 {len(self.up_blocks)} 个上采样块 ===")
         for i, upsample_block in enumerate(self.up_blocks):
             is_final_block = i == len(self.up_blocks) - 1
+            print(f"\n[上采样块 {i}] 类型: {upsample_block.__class__.__name__}, 是否最终块: {is_final_block}")
+            
+            # 残差切片管理
+            res_samples_len = len(upsample_block.resnets)
+            res_samples = down_block_res_samples[-res_samples_len:]
+            down_block_res_samples = down_block_res_samples[:-res_samples_len]
+            print(f"    |-- 取 {res_samples_len} 个残差，剩余残差数: {len(down_block_res_samples)}")
+            print(f"    |-- 当前残差形状列表: {[s.shape for s in res_samples]}")
 
-            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
-            down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
-
-            # if we have not reached the final block and need to forward the
-            # upsample size, we do it here
+            # 上采样尺寸传递
+            upsample_size = None
             if not is_final_block and forward_upsample_size:
                 upsample_size = down_block_res_samples[-1].shape[2:]
+                print(f"    |-- 非最终块，设置 upsample_size={upsample_size}")
 
-            if hasattr(upsample_block, "has_cross_attention") and upsample_block.has_cross_attention:
+            # 判断是否含交叉注意力
+            has_cross_attn = hasattr(upsample_block, "has_cross_attention") and upsample_block.has_cross_attention
+            print(f"    |-- 是否含交叉注意力: {has_cross_attn}")
+
+            # 执行上采样块前向
+            if has_cross_attn:
+                print(f"    |-- 调用带交叉注意力的上采样块，encoder_hidden_states 形状: {encoder_hidden_states.shape}")
                 sample = upsample_block(
                     hidden_states=sample,
                     temb=emb,
@@ -1488,24 +1587,39 @@ class UNet2DConditionModel(
                     encoder_attention_mask=encoder_attention_mask,
                 )
             else:
+                print("    |-- 调用普通上采样块")
                 sample = upsample_block(
                     hidden_states=sample,
                     temb=emb,
                     res_hidden_states_tuple=res_samples,
                     upsample_size=upsample_size,
                 )
+            print(f"    |-- 上采样块 {i} 输出形状: {sample.shape}")
 
-        # 6. post-process
+        # 后处理步骤
+        print("\n=== 进入后处理阶段 ===")
         if self.conv_norm_out:
+            print(f"应用 conv_norm_out: {self.conv_norm_out}")
             sample = self.conv_norm_out(sample)
+            print(f"    |-- 归一化后 sample 均值: {sample.mean().item():.4f}, 形状: {sample.shape}")
+            
+            print(f"应用 conv_act: {self.conv_act.__class__.__name__}")
             sample = self.conv_act(sample)
-        sample = self.conv_out(sample)
+            print(f"    |-- 激活后 sample 均值: {sample.mean().item():.4f}")
 
+        print(f"应用 conv_out: {self.conv_out} (输入通道: {self.conv_out.in_channels}, 输出通道: {self.conv_out.out_channels})")
+        sample = self.conv_out(sample)
+        print(f"后处理最终输出形状: {sample.shape}")
+
+        # PEFT 后端清理
         if USE_PEFT_BACKEND:
-            # remove `lora_scale` from each PEFT layer
+            print("\n[PEFT] 清理 LoRA 缩放因子 (scale=1.0)")
             unscale_lora_layers(self, lora_scale)
+            num_reset = sum(1 for n, _ in self.named_modules() if "lora" in n)
+            print(f"    |-- 已重置 {num_reset} 个 LoRA 层")
 
         if not return_dict:
+            print("\n返回非字典格式输出 (sample,)")
             return (sample,)
-
+            
         return UNet2DConditionOutput(sample=sample)
