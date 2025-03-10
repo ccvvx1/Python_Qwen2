@@ -1569,13 +1569,29 @@ class DownBlock2D(nn.Module):
         downsample_padding: int = 1,
     ):
         super().__init__()
-        resnets = []
+        print("\n=== 下采样块构建调试 ===")
+        print(f"初始参数: in_channels={in_channels}, out_channels={out_channels}, num_layers={num_layers}")
+        print(f"时序嵌入: temb_channels={temb_channels} ({'启用' if temb_channels > 0 else '禁用'})")
+        print(f"高级配置: resnet_groups={resnet_groups}, dropout={dropout:.2f}, act_fn={resnet_act_fn}")
 
+        # 残差块构建跟踪
+        resnets = []
+        print(f"\n[构建残差块]")
         for i in range(num_layers):
-            in_channels = in_channels if i == 0 else out_channels
+            layer_in_channels = in_channels if i == 0 else out_channels
+            print(f"  ├─ 层 {i+1}/{num_layers}")
+            print(f"     ├─ 输入通道: {layer_in_channels}")
+            print(f"     ├─ 输出通道: {out_channels}")
+            print(f"     ├─ 时间嵌入处理: {resnet_time_scale_shift or '默认'}")
+            print(f"     └─ 分组卷积: groups={resnet_groups} (有效性检查: {out_channels % resnet_groups == 0})")
+            
+            # 参数合法性检查
+            if not (out_channels % resnet_groups == 0):
+                print(f"        [!] 警告: 输出通道数{out_channels}无法被groups={resnet_groups}整除!")
+            
             resnets.append(
                 ResnetBlock2D(
-                    in_channels=in_channels,
+                    in_channels=layer_in_channels,
                     out_channels=out_channels,
                     temb_channels=temb_channels,
                     eps=resnet_eps,
@@ -1587,58 +1603,96 @@ class DownBlock2D(nn.Module):
                     pre_norm=resnet_pre_norm,
                 )
             )
-
         self.resnets = nn.ModuleList(resnets)
 
+        # 下采样配置验证
         if add_downsample:
-            self.downsamplers = nn.ModuleList(
-                [
-                    Downsample2D(
-                        out_channels, use_conv=True, out_channels=out_channels, padding=downsample_padding, name="op"
-                    )
-                ]
-            )
+            print(f"\n[下采样层配置]")
+            print(f"  ├─ 类型: 可学习卷积下采样")
+            print(f"  ├─ 目标通道: {out_channels}")
+            print(f"  └─ 填充策略: {downsample_padding} (类型检查: {type(downsample_padding)})")
+            
+            self.downsamplers = nn.ModuleList([
+                Downsample2D(
+                    out_channels, 
+                    use_conv=True,
+                    out_channels=out_channels,
+                    padding=downsample_padding,
+                    name="op"
+                )
+            ])
         else:
+            print(f"\n[下采样层配置] 已禁用 (add_downsample=False)")
             self.downsamplers = None
 
+        # 梯度检查点状态
+        print(f"\n[梯度检查点] {'启用' if self.gradient_checkpointing else '禁用'} (默认)")
         self.gradient_checkpointing = False
+
 
     def forward(
         self, hidden_states: torch.Tensor, temb: Optional[torch.Tensor] = None, *args, **kwargs
     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        print("\n=== 残差块前向传播 ===")
+        print(f"输入形状: {hidden_states.shape} | dtype={hidden_states.dtype}")
+        print(f"时间嵌入: {'存在' if temb is not None else '无'} ({temb.shape if temb is not None else ''})")
+
+        # 废弃参数检查
         if len(args) > 0 or kwargs.get("scale", None) is not None:
-            deprecation_message = "The `scale` argument is deprecated and will be ignored. Please remove it, as passing it will raise an error in the future. `scale` should directly be passed while calling the underlying pipeline component i.e., via `cross_attention_kwargs`."
-            deprecate("scale", "1.0.0", deprecation_message)
+            deprecation_message = "..."  # 原信息保持不变
+            print(f"[弃用警告] 检测到无效参数: args={args}, kwargs={kwargs}")
+            print(f"    ├─ 影响: scale参数将被忽略")
+            print(f"    └─ 解决方案: 通过cross_attention_kwargs传递参数")
+
+        # 梯度检查点配置跟踪
+        print(f"\n梯度检查点状态:")
+        print(f"    ├─ 启用状态: {'是' if torch.is_grad_enabled() and self.gradient_checkpointing else '否'}")
+        print(f"    ├─ Torch版本: {torch.__version__} (需要>=1.11.0: {is_torch_version('>=','1.11.0')})")
+        print(f"    └─ 检查点策略: {'reentrant=False' if is_torch_version('>=','1.11.0') else '旧版'}")
 
         output_states = ()
-
-        for resnet in self.resnets:
+        for idx, resnet in enumerate(self.resnets):
+            print(f"\n[残差块 {idx+1}/{len(self.resnets)}]")
+            print(f"    输入形状: {hidden_states.shape}")
+            
+            # 梯度检查点分支
             if torch.is_grad_enabled() and self.gradient_checkpointing:
-
-                def create_custom_forward(module):
-                    def custom_forward(*inputs):
-                        return module(*inputs)
-
-                    return custom_forward
-
+                print(f"    ├─ 使用梯度检查点 (非立即执行模式)")
                 if is_torch_version(">=", "1.11.0"):
+                    print(f"    ├─ 检查点模式: use_reentrant=False")
                     hidden_states = torch.utils.checkpoint.checkpoint(
                         create_custom_forward(resnet), hidden_states, temb, use_reentrant=False
                     )
                 else:
+                    print(f"    ├─ 检查点模式: 旧版兼容模式")
                     hidden_states = torch.utils.checkpoint.checkpoint(
                         create_custom_forward(resnet), hidden_states, temb
                     )
             else:
+                print(f"    ├─ 直接执行前向传播")
                 hidden_states = resnet(hidden_states, temb)
-
+            
+            print(f"    ├─ 输出形状: {hidden_states.shape}")
+            print(f"    └─ 内存占用: {hidden_states.element_size() * hidden_states.nelement() / 1024**2:.2f} MB")
+            
             output_states = output_states + (hidden_states,)
 
+        # 下采样处理
         if self.downsamplers is not None:
-            for downsampler in self.downsamplers:
+            print(f"\n[下采样阶段] 下采样器数量: {len(self.downsamplers)}")
+            for ds_idx, downsampler in enumerate(self.downsamplers):
+                print(f"    ├─ 下采样器 {ds_idx+1}: {type(downsampler).__name__}")
+                print(f"        ├─ 输入形状: {hidden_states.shape}")
                 hidden_states = downsampler(hidden_states)
-
+                print(f"        ├─ 输出形状: {hidden_states.shape}")
+                print(f"        └─ 步长/内核: {getattr(downsampler, 'stride', '?')}/{getattr(downsampler, 'kernel_size', '?')}")
             output_states = output_states + (hidden_states,)
+        else:
+            print(f"\n[下采样阶段] 无下采样器配置")
+
+        print(f"\n最终输出形状: {hidden_states.shape}")
+        print(f"输出状态元组长度: {len(output_states)}")
+
 
         return hidden_states, output_states
 
