@@ -32,7 +32,7 @@ from diffusers.models.attention_processor import (
     AttnProcessor,
     FusedAttnProcessor2_0,
 )
-from diffusers.models.embeddings import (
+from embeddings import (
     GaussianFourierProjection,
     GLIGENTextBoundingboxProjection,
     ImageHintTimeEmbedding,
@@ -683,23 +683,63 @@ class UNet2DConditionModel(
         freq_shift: float,
         time_embedding_dim: int,
     ) -> Tuple[int, int]:
+        print("\n=== 时间嵌入层初始化 ===")
+        print(f"时间嵌入类型: {time_embedding_type}")
+        print(f"输入参数: time_embedding_dim={time_embedding_dim}, block_out_channels[0]={block_out_channels[0]}")
+
         if time_embedding_type == "fourier":
+            print("[分支] 选择 Fourier 嵌入")
+            # 计算嵌入维度
             time_embed_dim = time_embedding_dim or block_out_channels[0] * 2
+            print(f"    |-- 计算 time_embed_dim: {time_embed_dim} (原始输入: {time_embedding_dim})")
+            
+            # 奇偶校验
             if time_embed_dim % 2 != 0:
-                raise ValueError(f"`time_embed_dim` should be divisible by 2, but is {time_embed_dim}.")
+                error_msg = f"`time_embed_dim` 应为偶数，但得到 {time_embed_dim}"
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            else:
+                print(f"    |-- 维度验证通过 (偶数)")
+
+            # 初始化高斯傅里叶投影
+            print(f"    |-- 初始化 GaussianFourierProjection:")
+            print(f"        |-- 输出维度: {time_embed_dim // 2}")
+            print(f"        |-- flip_sin_to_cos: {flip_sin_to_cos}")
             self.time_proj = GaussianFourierProjection(
-                time_embed_dim // 2, set_W_to_weight=False, log=False, flip_sin_to_cos=flip_sin_to_cos
+                time_embed_dim // 2, 
+                set_W_to_weight=False, 
+                log=False, 
+                flip_sin_to_cos=flip_sin_to_cos
             )
             timestep_input_dim = time_embed_dim
-        elif time_embedding_type == "positional":
-            time_embed_dim = time_embedding_dim or block_out_channels[0] * 4
+            print(f"    |-- timestep_input_dim 设置为: {timestep_input_dim}")
 
-            self.time_proj = Timesteps(block_out_channels[0], flip_sin_to_cos, freq_shift)
-            timestep_input_dim = block_out_channels[0]
-        else:
-            raise ValueError(
-                f"{time_embedding_type} does not exist. Please make sure to use one of `fourier` or `positional`."
+        elif time_embedding_type == "positional":
+            print("[分支] 选择 positional 嵌入")
+            time_embed_dim = time_embedding_dim or block_out_channels[0] * 4
+            print(f"    |-- 计算 time_embed_dim: {time_embed_dim} (原始输入: {time_embedding_dim})")
+            
+            # 初始化位置编码
+            print(f"    |-- 初始化 Timesteps:")
+            print(f"        |-- 通道数: {block_out_channels[0]}")
+            print(f"        |-- flip_sin_to_cos: {flip_sin_to_cos}")
+            print(f"        |-- freq_shift: {freq_shift}")
+            self.time_proj = Timesteps(
+                block_out_channels[0], 
+                flip_sin_to_cos, 
+                freq_shift
             )
+            timestep_input_dim = block_out_channels[0]
+            print(f"    |-- timestep_input_dim 设置为: {timestep_input_dim}")
+
+        else:
+            error_msg = f"无效的时间嵌入类型: {time_embedding_type} (允许值: 'fourier' 或 'positional')"
+            print(f"[错误] {error_msg}")
+            raise ValueError(error_msg)
+
+        print(f"最终配置: time_proj={self.time_proj.__class__.__name__}")
+        print(f"         timestep_input_dim={timestep_input_dim}")
+
 
         return time_embed_dim, timestep_input_dim
 
@@ -1051,26 +1091,51 @@ class UNet2DConditionModel(
         self, sample: torch.Tensor, timestep: Union[torch.Tensor, float, int]
     ) -> Optional[torch.Tensor]:
         timesteps = timestep
+        print("\n=== 时间步处理阶段 ===")
+        print(f"输入 timestep 原始类型: {type(timestep)}, 值: {timestep}")
+
+        # 类型转换分支
         if not torch.is_tensor(timesteps):
-            # TODO: this requires sync between CPU and GPU. So try to pass timesteps as tensors if you can
-            # This would be a good case for the `match` statement (Python 3.10+)
+            print("[1] 检测到非张量输入，开始转换")
             is_mps = sample.device.type == "mps"
+            print(f"    |-- 设备类型: {sample.device}, 是否 MPS: {is_mps}")
+
+            # 确定数据类型
             if isinstance(timestep, float):
                 dtype = torch.float32 if is_mps else torch.float64
+                print(f"    |-- 浮点类型转换: {timestep} -> {dtype}")
             else:
                 dtype = torch.int32 if is_mps else torch.int64
+                print(f"    |-- 整数类型转换: {timestep} -> {dtype}")
+            
+            # 创建张量
             timesteps = torch.tensor([timesteps], dtype=dtype, device=sample.device)
-        elif len(timesteps.shape) == 0:
+            print(f"    |-- 生成张量: shape={timesteps.shape}, dtype={timesteps.dtype}, device={timesteps.device}")
+        else:
+            print("[1] 输入已是张量，原始形状:", timesteps.shape)
+
+        # 标量张量处理
+        if len(timesteps.shape) == 0:
+            print("[2] 处理标量张量 (shape=[])")
             timesteps = timesteps[None].to(sample.device)
+            print(f"    |-- 升维后形状: {timesteps.shape}, device: {timesteps.device}")
 
-        # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
-        timesteps = timesteps.expand(sample.shape[0])
+        # 广播到 batch 维度
+        batch_size = sample.shape[0]
+        print(f"[3] 广播前形状: {timesteps.shape}, 目标 batch_size: {batch_size}")
+        timesteps = timesteps.expand(batch_size)
+        print(f"    |-- 广播后形状: {timesteps.shape}")
 
+        # 生成时间嵌入
+        print("[4] 调用 time_proj 生成嵌入")
         t_emb = self.time_proj(timesteps)
-        # `Timesteps` does not contain any weights and will always return f32 tensors
-        # but time_embedding might actually be running in fp16. so we need to cast here.
-        # there might be better ways to encapsulate this.
+        print(f"    |-- time_proj 输出形状: {t_emb.shape}, dtype={t_emb.dtype}")
+
+        # 类型对齐
+        print(f"[5] 对齐数据类型 (sample.dtype={sample.dtype})")
         t_emb = t_emb.to(dtype=sample.dtype)
+        print(f"    |-- 最终 t_emb: shape={t_emb.shape}, dtype={t_emb.dtype}")
+
         return t_emb
 
     def get_class_embed(self, sample: torch.Tensor, class_labels: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
