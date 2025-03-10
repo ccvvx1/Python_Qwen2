@@ -473,13 +473,13 @@ class UNet2DConditionModel(
 
             # 获取下采样块参数
             print(f"\n⚙️ 块参数详情:")
-            # print(f"   ├─ 残差层数: {layers_per_block[i]}")
-            # print(f"   ├─ Transformer层数: {transformer_layers_per_block[i]}")
-            # print(f"   ├─ 时间嵌入维度: {blocks_time_embed_dim}")
-            # print(f"   ├─ 交叉注意力维度: {cross_attention_dim[i]}")
-            # print(f"   ├─ 注意力头数: {num_attention_heads[i]}")
-            # print(f"   ├─ 注意力头维度: {attention_head_dim[i] or '自动'}")
-            # print(f"   └─ 仅交叉注意力: {only_cross_attention[i]}")
+            print(f"   ├─ 残差层数: {layers_per_block[i]}")
+            print(f"   ├─ Transformer层数: {transformer_layers_per_block[i]}")
+            print(f"   ├─ 时间嵌入维度: {blocks_time_embed_dim}")
+            print(f"   ├─ 交叉注意力维度: {cross_attention_dim[i]}")
+            print(f"   ├─ 注意力头数: {num_attention_heads[i]}")
+            print(f"   ├─ 注意力头维度: {attention_head_dim[i] or '自动'}")
+            print(f"   └─ 仅交叉注意力: {only_cross_attention[i]}")
 
             # 构建下采样块
             down_block = get_down_block(

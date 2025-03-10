@@ -1414,19 +1414,57 @@ class CrossAttnDownBlock2D(nn.Module):
         attention_type: str = "default",
     ):
         super().__init__()
+        print("\n=== 跨注意力残差块构建 ===")
+        print(f"初始配置: in_channels={in_channels}, out_channels={out_channels}, num_layers={num_layers}")
+        print(f"时间嵌入通道: temb_channels={temb_channels} ({'启用' if temb_channels > 0 else '禁用'})")
+        
         resnets = []
-        attentions = []
-
+        attentions = []  # 注意: 当前代码段未填充此列表
         self.has_cross_attention = True
-        self.num_attention_heads = num_attention_heads
-        if isinstance(transformer_layers_per_block, int):
-            transformer_layers_per_block = [transformer_layers_per_block] * num_layers
+        print(f"[核心标识] 跨注意力机制已启用 | 注意力头数: {num_attention_heads}")
 
+        # Transformer层配置处理跟踪
+        print(f"\n[Transformer层配置处理]")
+        original_tlp_type = type(transformer_layers_per_block).__name__
+        print(f"输入类型: {original_tlp_type}")
+        
+        if isinstance(transformer_layers_per_block, int):
+            print(f"将整数配置 {transformer_layers_per_block} 扩展为全{num_layers}层相同值")
+            print(f"结果列表: {[transformer_layers_per_block]*num_layers}")
+            transformer_layers_per_block = [transformer_layers_per_block] * num_layers
+        else:
+            print(f"列表配置验证: 长度{len(transformer_layers_per_block)} vs 总层数{num_layers}")
+            if len(transformer_layers_per_block) != num_layers:
+                error_msg = (
+                    f"配置长度不匹配 (需{num_layers}项，实际{len(transformer_layers_per_block)}项)\n"
+                    f"示例解决方案: transformer_layers_per_block=[2,2,2] 当num_layers=3"
+                )
+                print(f"[配置错误] {error_msg}")
+                raise ValueError(error_msg)
+
+        # 残差块构建过程跟踪
+        print(f"\n[残差网络构建]")
         for i in range(num_layers):
-            in_channels = in_channels if i == 0 else out_channels
+            layer_in_channels = in_channels if i == 0 else out_channels
+            print(f"层 {i+1}/{num_layers}:")
+            print(f"  ├─ 输入通道: {layer_in_channels} (层首: {'是' if i==0 else '否'})")
+            print(f"  ├─ 输出通道: {out_channels}")
+            print(f"  └─ 分组卷积验证: {out_channels} % {resnet_groups} = {out_channels % resnet_groups}")
+            
+            # 分组卷积兼容性检查
+            if out_channels % resnet_groups != 0:
+                print(f"  [!] 严重警告: 分组数{resnet_groups}无法整除输出通道数，将导致运行时错误!")
+            
+            # 残差块参数细节
+            print(f"  ResNet块参数:")
+            print(f"    ├─ 时间嵌入处理: {resnet_time_scale_shift or '无特殊处理'}")
+            print(f"    ├─ 激活函数: {resnet_act_fn}")
+            print(f"    ├─ Dropout率: {dropout}")
+            print(f"    └─ 预归一化: {'启用' if resnet_pre_norm else '禁用'}")
+
             resnets.append(
                 ResnetBlock2D(
-                    in_channels=in_channels,
+                    in_channels=layer_in_channels,
                     out_channels=out_channels,
                     temb_channels=temb_channels,
                     eps=resnet_eps,
@@ -1438,11 +1476,33 @@ class CrossAttnDownBlock2D(nn.Module):
                     pre_norm=resnet_pre_norm,
                 )
             )
+
+            # 在添加注意力层之前添加调试信息
+            print(f"\n[第{i+1}层注意力配置]")
+            print(f"  双交叉注意力模式: {'启用' if dual_cross_attention else '禁用'}")
+
             if not dual_cross_attention:
+                print("  正在初始化标准交叉注意力模块:")
+                # 头维度计算校验
+                head_dim = out_channels // num_attention_heads
+                print(f"    ├─ 理论头维度: {out_channels}/{num_attention_heads} = {head_dim}")
+                if out_channels % num_attention_heads != 0:
+                    error_msg = (f"头维度计算错误！输出通道数{out_channels} "
+                                f"必须能被注意力头数{num_attention_heads}整除")
+                    print(f"    [!] 严重错误: {error_msg}")
+                    raise ValueError(error_msg)
+                
+                # 参数兼容性检查
+                print(f"    ├─ 关键参数列表:")
+                print(f"        ├─ 注意力类型: {attention_type}")
+                print(f"        ├─ 仅交叉注意力: {only_cross_attention}")
+                print(f"        ├─ 上采样注意力: {upcast_attention}")
+                print(f"        └─ 线性投影: {'启用' if use_linear_projection else '禁用'}")
+                
                 attentions.append(
                     Transformer2DModel(
                         num_attention_heads,
-                        out_channels // num_attention_heads,
+                        head_dim,
                         in_channels=out_channels,
                         num_layers=transformer_layers_per_block[i],
                         cross_attention_dim=cross_attention_dim,
@@ -1453,30 +1513,81 @@ class CrossAttnDownBlock2D(nn.Module):
                         attention_type=attention_type,
                     )
                 )
+                print(f"    已创建标准Transformer2DModel ({transformer_layers_per_block[i]}层)")
             else:
+                print("  正在初始化双交叉注意力模块:")
+                print(f"    ├─ 注意: 强制设置transformer层数=1 (原配置: {transformer_layers_per_block[i]})")
+                print(f"    └─ 潜在功能差异: 禁用use_linear_projection/attention_type等参数")
+                
+                # 双注意力维度校验
+                if cross_attention_dim is None:
+                    error_msg = "双交叉注意力需要明确指定cross_attention_dim参数"
+                    print(f"    [!] 配置错误: {error_msg}")
+                    raise ValueError(error_msg)
+                
+                dual_head_dim = out_channels // num_attention_heads
+                print(f"    ├─ 头维度计算: {out_channels}//{num_attention_heads}={dual_head_dim}")
+                if out_channels % num_attention_heads != 0:
+                    error_msg = f"输出通道{out_channels}无法被头数{num_attention_heads}整除"
+                    print(f"    [!] 维度错误: {error_msg}")
+                    raise ValueError(error_msg)
+                
                 attentions.append(
                     DualTransformer2DModel(
                         num_attention_heads,
-                        out_channels // num_attention_heads,
+                        dual_head_dim,
                         in_channels=out_channels,
-                        num_layers=1,
+                        num_layers=1,  # 固定值
                         cross_attention_dim=cross_attention_dim,
                         norm_num_groups=resnet_groups,
                     )
                 )
+                print(f"    已创建DualTransformer2DModel (固定1层)")
+
+
         self.attentions = nn.ModuleList(attentions)
         self.resnets = nn.ModuleList(resnets)
 
+        # 下采样配置调试
+        print(f"\n=== 下采样配置跟踪 ===")
         if add_downsample:
-            self.downsamplers = nn.ModuleList(
-                [
-                    Downsample2D(
-                        out_channels, use_conv=True, out_channels=out_channels, padding=downsample_padding, name="op"
-                    )
-                ]
-            )
+            print(f"[下采样层初始化] 类型: 可学习卷积")
+            print(f"  ├─ 输入通道: {out_channels}")
+            print(f"  ├─ 输出通道: {out_channels} (保持相同)")
+            print(f"  ├─ 填充策略: {downsample_padding} (类型验证: {type(downsample_padding).__name__})")
+            print(f"  └─ 预期输出尺寸变化: H/2 × W/2")
+            
+            # 内核参数校验
+            expected_padding = downsample_padding if isinstance(downsample_padding, int) else 0
+            if expected_padding not in [0, 1]:
+                print(f"  [!] 非常规填充值警告: {downsample_padding} (通常应为0或1)")
+            
+            self.downsamplers = nn.ModuleList([
+                Downsample2D(
+                    out_channels, 
+                    use_conv=True,
+                    out_channels=out_channels,
+                    padding=downsample_padding,
+                    name="op"
+                )
+            ])
+            print(f"成功创建 {len(self.downsamplers)} 个下采样器")
         else:
+            print(f"[下采样配置] 已禁用 (add_downsample=False)")
             self.downsamplers = None
+
+        # 梯度检查点状态跟踪
+        print(f"\n[梯度检查点最终状态]")
+        # print(f"  初始化默认值: {self.gradient_checkpointing}")
+        # print(f"  实际生效条件: {'是' if self.gradient_checkpointing and self.training else '否'}")
+        # print(f"  当前模式: {'训练' if self.training else '推理'}")
+
+        # # 设备/数据类型检查
+        # current_device = next(self.parameters()).device if len(list(self.parameters())) > 0 else 'cpu'
+        # print(f"\n[设备配置]")
+        # print(f"  主参数存储设备: {current_device}")
+        # print(f"  数据类型: {next(self.parameters()).dtype if len(list(self.parameters())) > 0 else '未初始化'}")
+
 
         self.gradient_checkpointing = False
 
