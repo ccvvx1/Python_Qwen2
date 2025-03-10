@@ -97,6 +97,12 @@ class Downsample2D(nn.Module):
     ):
     # def ok32432():
         super().__init__()
+        self.channels = channels
+        self.out_channels = out_channels or channels
+        self.use_conv = use_conv
+        self.padding = padding
+        stride = 2
+        self.name = name
         print("\n=== 下采样模块初始化 ===")
         print(f"初始参数验证:")
         print(f"  ├─ 输入通道: {channels} (类型: {type(channels)})")
