@@ -574,16 +574,40 @@ class Attention(nn.Module):
         # here we simply pass along all tensors to the selected processor class
         # For standard processors that are defined here, `**cross_attention_kwargs` is empty
 
+        # 获取目标处理器的合法参数列表
         attn_parameters = set(inspect.signature(self.processor.__call__).parameters.keys())
+        print(f"\n[参数检查] {self.processor.__class__.__name__} 的合法参数: {attn_parameters}")
+
+        # 需要静默处理的特殊参数
         quiet_attn_parameters = {"ip_adapter_masks", "ip_hidden_states"}
+        print(f"[特殊参数] 静默参数: {quiet_attn_parameters}")
+
+        # 处理可能的None值
+        cross_attention_kwargs = cross_attention_kwargs or {}
+        print(f"\n[输入参数] 接收到cross_attention_kwargs: {list(cross_attention_kwargs.keys())}")
+
+        # 检测未声明参数
         unused_kwargs = [
-            k for k, _ in cross_attention_kwargs.items() if k not in attn_parameters and k not in quiet_attn_parameters
+            k for k in cross_attention_kwargs 
+            if k not in attn_parameters and k not in quiet_attn_parameters
         ]
-        if len(unused_kwargs) > 0:
+
+        if unused_kwargs:
+            print(f"\n⚠️ 参数警告: 检测到未声明的参数 {unused_kwargs}")
             logger.warning(
-                f"cross_attention_kwargs {unused_kwargs} are not expected by {self.processor.__class__.__name__} and will be ignored."
+                f"参数 {unused_kwargs} 不被 {self.processor.__class__.__name__} 接受，将被忽略"
             )
-        cross_attention_kwargs = {k: w for k, w in cross_attention_kwargs.items() if k in attn_parameters}
+        else:
+            print("\n✓ 所有参数均被处理器接受")
+
+        # 参数过滤
+        filtered_params = {k: v for k, v in cross_attention_kwargs.items() if k in attn_parameters}
+        print(f"\n[参数过滤] 有效参数列表: {list(filtered_params.keys())}")
+
+        cross_attention_kwargs = filtered_params
+
+        print("进程名称：", self.processor)
+
 
         return self.processor(
             self,
@@ -3231,77 +3255,184 @@ class AttnProcessor2_0:
         *args,
         **kwargs,
     ) -> torch.Tensor:
+        # 过时参数检查
         if len(args) > 0 or kwargs.get("scale", None) is not None:
-            deprecation_message = "The `scale` argument is deprecated and will be ignored. Please remove it, as passing it will raise an error in the future. `scale` should directly be passed while calling the underlying pipeline component i.e., via `cross_attention_kwargs`."
+            print("\n⚠️ 检测到过时参数使用 ".center(50, "-"))
+            print(f"警告类型: 参数弃用｜参数名: scale")
+            print("建议修复: 通过 cross_attention_kwargs 传递scale参数")
             deprecate("scale", "1.0.0", deprecation_message)
 
+        # 残差连接初始化
+        print(f"\n[残差连接] 保存初始hidden_states作为残差")
+        print(f"残差张量形状: {hidden_states.shape}")
         residual = hidden_states
+
+        # 空间归一化处理
         if attn.spatial_norm is not None:
+            print(f"\n[空间归一化] 应用 {attn.spatial_norm.__class__.__name__}")
+            print(f"输入形状: {hidden_states.shape}｜时间嵌入形状: {temb.shape if temb is not None else 'None'}")
             hidden_states = attn.spatial_norm(hidden_states, temb)
+            print(f"归一化后形状: {hidden_states.shape}")
+        else:
+            print("\n[空间归一化] 未配置，跳过处理")
 
+        # 维度转换处理
         input_ndim = hidden_states.ndim
-
+        print(f"\n[维度转换] 输入张量维度: {input_ndim}D")
         if input_ndim == 4:
             batch_size, channel, height, width = hidden_states.shape
+            print(f"4D输入展开｜原始形状: {hidden_states.shape}")
             hidden_states = hidden_states.view(batch_size, channel, height * width).transpose(1, 2)
+            print(f"转换后形状: {hidden_states.shape} (batch, seq_len, channels)")
+        else:
+            print(f"保持{input_ndim}D形状不变")
 
-        batch_size, sequence_length, _ = (
-            hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
-        )
-
-        if attention_mask is not None:
-            attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
-            # scaled_dot_product_attention expects attention_mask shape to be
-            # (batch, heads, source_length, target_length)
-            attention_mask = attention_mask.view(batch_size, attn.heads, -1, attention_mask.shape[-1])
-
-        if attn.group_norm is not None:
-            hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
-
-        query = attn.to_q(hidden_states)
-
+        # 序列长度获取
         if encoder_hidden_states is None:
-            encoder_hidden_states = hidden_states
-        elif attn.norm_cross:
-            encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
+            print(f"\n[序列长度] 从hidden_states获取: {hidden_states.shape}")
+            batch_size, sequence_length, _ = hidden_states.shape
+        else:
+            print(f"\n[序列长度] 从encoder_hidden_states获取: {encoder_hidden_states.shape}")
+            batch_size, sequence_length, _ = encoder_hidden_states.shape
+        print(f"当前批次大小: {batch_size}｜序列长度: {sequence_length}")
 
+        # 注意力掩码处理
+        if attention_mask is not None:
+            print(f"\n[注意力掩码] 原始形状: {attention_mask.shape}")
+            attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
+            print(f"调整后形状: {attention_mask.shape}")
+            
+            # 形状重塑为多头注意力格式
+            new_shape = (batch_size, attn.heads, -1, attention_mask.shape[-1])
+            print(f"重塑为多头格式: {new_shape}")
+            attention_mask = attention_mask.view(*new_shape)
+            print(f"最终掩码形状: {attention_mask.shape}")
+        else:
+            print("\n[注意力掩码] 未提供，跳过处理")
+
+        # 组归一化处理
+        if attn.group_norm is not None:
+            print(f"\n[组归一化] 应用 {attn.group_norm.__class__.__name__}")
+            print(f"输入形状: {hidden_states.shape}")
+            print(f"转置前: {hidden_states.transpose(1, 2).shape}")
+            hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
+            print(f"归一化后形状: {hidden_states.shape}")
+        else:
+            print("\n[组归一化] 未配置，跳过处理")
+
+
+        # 生成查询向量
+        print(f"\n[生成Query] 输入形状: {hidden_states.shape}")
+        query = attn.to_q(hidden_states)
+        print(f"✓ Query投影后形状: {query.shape}｜参数形状: {attn.to_q.weight.shape}")
+
+        # 处理编码器隐藏状态
+        if encoder_hidden_states is None:
+            print("\n[编码器状态] 使用自身hidden_states作为K,V来源")
+            encoder_hidden_states = hidden_states
+        else:
+            print(f"\n[编码器状态] 外部输入形状: {encoder_hidden_states.shape}")
+            if attn.norm_cross:
+                print("※ 应用交叉注意力归一化")
+                encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
+                print(f"归一化后形状: {encoder_hidden_states.shape}")
+
+        # 生成Key/Value
+        print("\n[生成Key/Value]")
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
+        print(f"Key投影形状: {key.shape}｜参数: {attn.to_k.weight.shape}")
+        print(f"Value投影形状: {value.shape}｜参数: {attn.to_v.weight.shape}")
 
+        # 维度分解
         inner_dim = key.shape[-1]
         head_dim = inner_dim // attn.heads
+        print(f"\n[多头拆分] 内部维度={inner_dim}｜头数={attn.heads}｜单头维度={head_dim}")
+        print(f"验证整除性: {inner_dim} / {attn.heads} = {head_dim}")
 
+        # Query重塑
+        print(f"\n[Query重塑] 原始形状: {query.shape}")
         query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        print(f"重塑后形状: {query.shape} (batch, heads, seq_len, head_dim)")
 
+        # Key/Value重塑
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        print(f"Key重塑形状: {key.shape}｜Value重塑形状: {value.shape}")
 
+        # 归一化处理
         if attn.norm_q is not None:
+            print(f"\n[Query归一化] 应用{attn.norm_q.__class__.__name__}")
+            print(f"归一化前统计: μ={query.mean().item():.4f} σ={query.std().item():.4f}")
             query = attn.norm_q(query)
-        if attn.norm_k is not None:
-            key = attn.norm_k(key)
+            print(f"归一化后统计: μ={query.mean().item():.4f} σ={query.std().item():.4f}")
 
-        # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
+        if attn.norm_k is not None:
+            print(f"\n[Key归一化] 应用{attn.norm_k.__class__.__name__}")
+            print(f"归一化前统计: μ={key.mean().item():.4f} σ={key.std().item():.4f}")
+            key = attn.norm_k(key)
+            print(f"归一化后统计: μ={key.mean().item():.4f} σ={key.std().item():.4f}")
+
+        # 注意力计算
+        print("\n[注意力计算] 开始缩放点积注意力")
+        print(f"Query形状: {query.shape}｜Key形状: {key.shape}｜Value形状: {value.shape}")
+        print(f"注意力掩码: {'已启用' if attention_mask is not None else '未启用'}")
+
         hidden_states = F.scaled_dot_product_attention(
-            query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
+            query, key, value, 
+            attn_mask=attention_mask, 
+            dropout_p=0.0, 
+            is_causal=False
         )
 
+        print(f"\n✓ 注意力输出形状: {hidden_states.shape}")
+        print(f"注意力输出统计: μ={hidden_states.mean().item():.4f} σ={hidden_states.std().item():.4f}")
+
+        # 合并多头结果
+        print(f"\n[合并多头] 输入形状: {hidden_states.shape}")
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
+        print(f"转置并重塑后形状: {hidden_states.shape} (batch, seq_len, embed_dim)")
+
+        # 数据类型一致性检查
+        print(f"\n[数据类型] 转换前: {hidden_states.dtype} → 目标类型: {query.dtype}")
         hidden_states = hidden_states.to(query.dtype)
+        print(f"转换后数据类型: {hidden_states.dtype}")
 
-        # linear proj
+        # 线性投影
+        print(f"\n[线性投影] 应用 {attn.to_out[0].__class__.__name__} 层")
+        print(f"权重形状: {attn.to_out[0].weight.shape} 偏置: {attn.to_out[0].bias is not None}")
         hidden_states = attn.to_out[0](hidden_states)
-        # dropout
+        print(f"投影后形状: {hidden_states.shape}")
+
+        # Dropout处理
+        print(f"\n[Dropout] 概率: {attn.to_out[1].p}｜模式: {'训练' if attn.training else '评估'}")
         hidden_states = attn.to_out[1](hidden_states)
+        if attn.training:
+            zero_ratio = (hidden_states == 0).float().mean().item()
+            print(f"零值比例: {zero_ratio*100:.1f}%")
 
+        # 恢复4D形状
         if input_ndim == 4:
+            print(f"\n[恢复4D] 当前形状: {hidden_states.shape}")
             hidden_states = hidden_states.transpose(-1, -2).reshape(batch_size, channel, height, width)
+            print(f"转置重塑后形状: {hidden_states.shape} (batch, channel, H, W)")
+        else:
+            print("\n[维度保持] 非4D输入，保持3D形状")
 
+        # 残差连接
         if attn.residual_connection:
+            print(f"\n[残差连接] 残差形状: {residual.shape}｜当前形状: {hidden_states.shape}")
             hidden_states = hidden_states + residual
+            print(f"合并后极值: max={hidden_states.max().item():.2f} min={hidden_states.min().item():.2f}")
+        else:
+            print("\n[残差连接] 未启用，跳过相加操作")
 
+        # 输出缩放
+        print(f"\n[输出缩放] 缩放因子: {attn.rescale_output_factor}")
         hidden_states = hidden_states / attn.rescale_output_factor
+        print(f"最终输出形状: {hidden_states.shape}")
+        print(f"最终统计: μ={hidden_states.mean().item():.4f} σ={hidden_states.std().item():.4f}")
+
 
         return hidden_states
 
