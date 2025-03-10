@@ -23,7 +23,7 @@ import torch.nn.functional as F
 from diffusers.utils import deprecate
 from diffusers.models.activations import get_activation
 from diffusers.models.attention_processor import SpatialNorm
-from diffusers.models.downsampling import (  # noqa
+from downsampling import (  # noqa
     Downsample1D,
     Downsample2D,
     FirDownsample2D,
