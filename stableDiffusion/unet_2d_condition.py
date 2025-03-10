@@ -1158,52 +1158,118 @@ class UNet2DConditionModel(
         self, emb: torch.Tensor, encoder_hidden_states: torch.Tensor, added_cond_kwargs: Dict[str, Any]
     ) -> Optional[torch.Tensor]:
         aug_emb = None
-        if self.config.addition_embed_type == "text":
-            aug_emb = self.add_embedding(encoder_hidden_states)
-        elif self.config.addition_embed_type == "text_image":
-            # Kandinsky 2.1 - style
-            if "image_embeds" not in added_cond_kwargs:
-                raise ValueError(
-                    f"{self.__class__} has the config param `addition_embed_type` set to 'text_image' which requires the keyword argument `image_embeds` to be passed in `added_cond_kwargs`"
-                )
+        print("\n=== 条件嵌入生成 ===")
+        print(f"当前模式: {self.config.addition_embed_type}")
+        print(f"输入参数检查: encoder_hidden_states.shape={encoder_hidden_states.shape if encoder_hidden_states is not None else None}")
+        # print(f"              added_cond_kwargs.keys()={list(added_cond_kwargs.keys())}")
 
-            image_embs = added_cond_kwargs.get("image_embeds")
-            text_embs = added_cond_kwargs.get("text_embeds", encoder_hidden_states)
-            aug_emb = self.add_embedding(text_embs, image_embs)
-        elif self.config.addition_embed_type == "text_time":
-            # SDXL - style
-            if "text_embeds" not in added_cond_kwargs:
-                raise ValueError(
-                    f"{self.__class__} has the config param `addition_embed_type` set to 'text_time' which requires the keyword argument `text_embeds` to be passed in `added_cond_kwargs`"
-                )
-            text_embeds = added_cond_kwargs.get("text_embeds")
-            if "time_ids" not in added_cond_kwargs:
-                raise ValueError(
-                    f"{self.__class__} has the config param `addition_embed_type` set to 'text_time' which requires the keyword argument `time_ids` to be passed in `added_cond_kwargs`"
-                )
-            time_ids = added_cond_kwargs.get("time_ids")
-            time_embeds = self.add_time_proj(time_ids.flatten())
-            time_embeds = time_embeds.reshape((text_embeds.shape[0], -1))
-            add_embeds = torch.concat([text_embeds, time_embeds], dim=-1)
-            add_embeds = add_embeds.to(emb.dtype)
-            aug_emb = self.add_embedding(add_embeds)
-        elif self.config.addition_embed_type == "image":
-            # Kandinsky 2.2 - style
+        if self.config.addition_embed_type == "text":
+            print("[分支] 纯文本条件模式")
+            aug_emb = self.add_embedding(encoder_hidden_states)
+            print(f"    |-- 直接使用 encoder_hidden_states 生成嵌入")
+            print(f"    |-- aug_emb.shape: {aug_emb.shape}, dtype={aug_emb.dtype}")
+
+        elif self.config.addition_embed_type == "text_image":
+            print("[分支] 图文混合条件模式 (Kandinsky 2.1)")
+            # 图像嵌入检查
             if "image_embeds" not in added_cond_kwargs:
-                raise ValueError(
-                    f"{self.__class__} has the config param `addition_embed_type` set to 'image' which requires the keyword argument `image_embeds` to be passed in `added_cond_kwargs`"
-                )
+                error_msg = f"缺失必要参数 'image_embeds'，当前参数: {list(added_cond_kwargs.keys())}"
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            
+            # 获取嵌入
             image_embs = added_cond_kwargs.get("image_embeds")
-            aug_emb = self.add_embedding(image_embs)
-        elif self.config.addition_embed_type == "image_hint":
-            # Kandinsky 2.2 ControlNet - style
-            if "image_embeds" not in added_cond_kwargs or "hint" not in added_cond_kwargs:
-                raise ValueError(
-                    f"{self.__class__} has the config param `addition_embed_type` set to 'image_hint' which requires the keyword arguments `image_embeds` and `hint` to be passed in `added_cond_kwargs`"
+            text_embs = added_cond_kwargs.get("text_embs", encoder_hidden_states)
+            print(f"    |-- 图像嵌入形状: {image_embs.shape}, 文本嵌入形状: {text_embs.shape}")
+            
+            # 生成联合嵌入
+            aug_emb = self.add_embedding(text_embs, image_embs)
+            print(f"    |-- 联合嵌入结果: shape={aug_emb.shape}, 均值={aug_emb.mean().item():.4f}")
+
+        elif self.config.addition_embed_type == "text_time":
+            print("[分支] 文本时间混合模式 (SDXL)")
+            # 文本嵌入检查
+            if "text_embeds" not in added_cond_kwargs:
+                error_msg = f"缺失必要参数 'text_embeds'，当前参数: {list(added_cond_kwargs.keys())}"
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            text_embeds = added_cond_kwargs.get("text_embeds")
+            print(f"    |-- 文本条件嵌入形状: {text_embeds.shape}")
+
+            # 时间ID检查
+            if "time_ids" not in added_cond_kwargs:
+                error_msg = f"缺失必要参数 'time_ids'，当前参数: {list(added_cond_kwargs.keys())}"
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            time_ids = added_cond_kwargs.get("time_ids")
+            print(f"    |-- 原始时间ID形状: {time_ids.shape}")
+
+            # 时间嵌入处理
+            time_embeds = self.add_time_proj(time_ids.flatten())
+            print(f"    |-- 展平时间ID后: shape={time_ids.flatten().shape}")
+            print(f"    |-- 投影后时间嵌入: shape={time_embeds.shape}")
+
+            # 形状重塑
+            time_embeds = time_embeds.reshape((text_embeds.shape[0], -1))
+            print(f"    |-- 重塑后时间嵌入: batch={text_embeds.shape[0]}, shape={time_embeds.shape}")
+
+            # 拼接文本与时间
+            add_embeds = torch.concat([text_embeds, time_embeds], dim=-1)
+            print(f"    |-- 拼接后嵌入: shape={add_embeds.shape} (文本 {text_embeds.shape[-1]} + 时间 {time_embeds.shape[-1]})")
+
+            # 类型对齐
+            add_embeds = add_embeds.to(emb.dtype)
+            print(f"    |-- 对齐数据类型: {emb.dtype} → {add_embeds.dtype}")
+
+            # 最终嵌入生成
+            aug_emb = self.add_embedding(add_embeds)
+            print(f"    |-- 最终条件嵌入: shape={aug_emb.shape}, 均值={aug_emb.mean().item():.4f}")     
+
+
+        elif self.config.addition_embed_type == "image":
+            print("[分支] 纯图像条件模式 (Kandinsky 2.2)")
+            # 图像嵌入检查
+            if "image_embeds" not in added_cond_kwargs:
+                error_msg = (
+                    f"缺失必要参数 'image_embeds'，当前可用参数: {list(added_cond_kwargs.keys())}\n"
+                    f"提示: 请确保在调用时传入图像嵌入张量，例如 `pipe(..., added_cond_kwargs={'image_embeds': image_embeds})`"
                 )
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            
+            # 获取图像嵌入
+            image_embs = added_cond_kwargs.get("image_embeds")
+            print(f"    |-- 图像嵌入形状: {image_embs.shape}, dtype={image_embs.dtype}, 均值: {image_embs.mean().item():.4f}")
+            
+            # 生成嵌入
+            aug_emb = self.add_embedding(image_embs)
+            print(f"    |-- 增强嵌入结果: shape={aug_emb.shape}, 与时间嵌入兼容性检查: {aug_emb.shape == emb.shape}")
+
+        elif self.config.addition_embed_type == "image_hint":
+            print("[分支] 图像+控制提示模式 (Kandinsky 2.2 ControlNet)")
+            # 参数存在性检查
+            required_keys = ["image_embeds", "hint"]
+            missing_keys = [key for key in required_keys if key not in added_cond_kwargs]
+            if missing_keys:
+                error_msg = (
+                    f"缺失必要参数 {missing_keys}，当前可用参数: {list(added_cond_kwargs.keys())}\n"
+                    f"提示: ControlNet 需要同时提供图像嵌入和空间提示（如边缘检测图）"
+                )
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            
+            # 获取参数
             image_embs = added_cond_kwargs.get("image_embeds")
             hint = added_cond_kwargs.get("hint")
+            print(f"    |-- 图像嵌入形状: {image_embs.shape}, 均值: {image_embs.mean().item():.4f}")
+            print(f"    |-- 控制提示形状: {hint.shape}, 通道数: {hint.shape[1]}, 值范围: [{hint.min().item():.3f}, {hint.max().item():.3f}]")
+            
+            # 生成联合嵌入
             aug_emb = self.add_embedding(image_embs, hint)
+            print(f"    |-- 联合嵌入结果: shape={aug_emb.shape}, 与样本形状兼容性: {aug_emb.shape[2:] == sample.shape[2:]}")
+
+        print("图像条件嵌入生成完成")
+
         return aug_emb
 
     def process_encoder_hidden_states(

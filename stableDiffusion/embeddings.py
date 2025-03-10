@@ -1315,38 +1315,115 @@ class TimestepEmbedding(nn.Module):
     ):
         super().__init__()
 
-        self.linear_1 = nn.Linear(in_channels, time_embed_dim, sample_proj_bias)
+        print("\n=== 时间嵌入层初始化 ===")
+        print(f"输入参数:")
+        print(f"  in_channels={in_channels}, time_embed_dim={time_embed_dim}")
+        print(f"  cond_proj_dim={cond_proj_dim}, out_dim={out_dim}")
+        print(f"  act_fn={act_fn}, post_act_fn={post_act_fn}")
+        print(f"  sample_proj_bias={sample_proj_bias}")
 
+        # 第一个线性层
+        self.linear_1 = nn.Linear(in_channels, time_embed_dim, sample_proj_bias)
+        print(f"\n[线性层1] 已创建:")
+        print(f"  输入维度: {in_channels}, 输出维度: {time_embed_dim}")
+        print(f"  权重形状: {self.linear_1.weight.shape}")
+        print(f"  偏置启用: {sample_proj_bias} → 偏置形状: {self.linear_1.bias.shape if sample_proj_bias else '无'}")
+
+        # 条件投影层
         if cond_proj_dim is not None:
             self.cond_proj = nn.Linear(cond_proj_dim, in_channels, bias=False)
+            print(f"\n[条件投影层] 已启用:")
+            print(f"  输入维度: {cond_proj_dim} (条件空间)")
+            print(f"  输出维度: {in_channels} (与主路径对齐)")
+            print(f"  权重形状: {self.cond_proj.weight.shape}")
+            print(f"  偏置启用: 无 → 原因: 论文建议减少过拟合")
         else:
             self.cond_proj = None
+            print(f"\n[条件投影层] 已禁用 (cond_proj_dim=None)")
 
+        # 激活函数
         self.act = get_activation(act_fn)
+        print(f"\n[主激活函数] 类型: {self.act.__class__.__name__ if self.act else '无'}")
+        if self.act:
+            if isinstance(self.act, nn.LeakyReLU):
+                print(f"  参数: negative_slope={self.act.negative_slope:.3f}")
+            elif isinstance(self.act, nn.GELU):
+                print("  近似计算: gelu_fast" if "gelu_fast" in str(self.act) else "  标准实现")
 
-        if out_dim is not None:
-            time_embed_dim_out = out_dim
-        else:
-            time_embed_dim_out = time_embed_dim
+        # 第二个线性层
+        time_embed_dim_out = out_dim if out_dim is not None else time_embed_dim
+        print(f"\n[线性层2] 维度配置:")
+        print(f"  输入维度: {time_embed_dim} → 输出维度: {time_embed_dim_out} (out_dim {'指定' if out_dim else '默认'})")
         self.linear_2 = nn.Linear(time_embed_dim, time_embed_dim_out, sample_proj_bias)
+        print(f"  权重形状: {self.linear_2.weight.shape}")
+        print(f"  偏置启用: {sample_proj_bias} → 偏置形状: {self.linear_2.bias.shape if sample_proj_bias else '无'}")
 
-        if post_act_fn is None:
-            self.post_act = None
-        else:
+        # 后激活函数
+        if post_act_fn is not None:
             self.post_act = get_activation(post_act_fn)
+            print(f"\n[后激活函数] 类型: {self.post_act.__class__.__name__}")
+            if isinstance(self.post_act, nn.Sigmoid):
+                print("  注意: 输出将被限制在 (0,1) 范围内")
+        else:
+            self.post_act = None
+            print(f"\n[后激活函数] 未配置 (post_act_fn=None)")
+
+        print("\n初始化完成，层结构摘要:")
+        print(f"linear_1: {in_channels}→{time_embed_dim}")
+        print(f"cond_proj: {'Enabled' if cond_proj_dim else 'Disabled'}")
+        print(f"act: {act_fn}")
+        print(f"linear_2: {time_embed_dim}→{time_embed_dim_out}")
+        print(f"post_act: {post_act_fn or 'None'}")
+
 
     def forward(self, sample, condition=None):
+        # 条件投影处理
         if condition is not None:
-            sample = sample + self.cond_proj(condition)
+            print("\n[条件投影] 输入条件处理")
+            print(f"原始 sample 形状: {sample.shape}, dtype={sample.dtype}")
+            print(f"条件 condition 形状: {condition.shape}, 均值: {condition.mean().item():.4f}")
+            
+            # 执行条件投影
+            projected_cond = self.cond_proj(condition)
+            print(f"投影后条件形状: {projected_cond.shape}, 与 sample 形状兼容性: {projected_cond.shape == sample.shape}")
+            print(f"投影权重统计: weight={self.cond_proj.weight.mean().item():.4f} ± {self.cond_proj.weight.std().item():.4f}")
+            
+            # 执行加法
+            sample = sample + projected_cond
+            print(f"合并后 sample 统计: 均值={sample.mean().item():.4f}, 标准差={sample.std().item():.4f}")
+        else:
+            print("\n[条件投影] 无条件输入")
+
+        # 第一个线性层
+        print("\n[线性层1] 前向计算")
+        print(f"输入形状: {sample.shape}, 权重形状: {self.linear_1.weight.shape}")
         sample = self.linear_1(sample)
+        print(f"输出形状: {sample.shape}, 输出极值: [{sample.min().item():.4f}, {sample.max().item():.4f}]")
 
+        # 激活函数
         if self.act is not None:
+            print(f"\n[激活函数] 类型: {self.act.__class__.__name__}")
+            pre_act = sample.clone()
             sample = self.act(sample)
+            print(f"激活前后变化: 均值 {pre_act.mean().item():.4f} → {sample.mean().item():.4f}")
+            print(f"激活后非零比例: {(sample != 0).float().mean().item()*100:.2f}%")
+        else:
+            print("\n[激活函数] 无激活层")
 
+        # 第二个线性层
+        print("\n[线性层2] 前向计算")
+        print(f"输入形状: {sample.shape}, 权重形状: {self.linear_2.weight.shape}")
         sample = self.linear_2(sample)
+        print(f"输出形状: {sample.shape}, 输出标准差: {sample.std().item():.4f}")
 
+        # 后激活函数
         if self.post_act is not None:
+            print(f"\n[后激活函数] 类型: {self.post_act.__class__.__name__}")
             sample = self.post_act(sample)
+            print(f"最终输出范围: [{sample.min().item():.4f}, {sample.max().item():.4f}]")
+        else:
+            print("\n[后激活函数] 无后激活层")
+
         return sample
 
 
