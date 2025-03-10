@@ -1626,7 +1626,7 @@ class DownBlock2D(nn.Module):
             self.downsamplers = None
 
         # 梯度检查点状态
-        print(f"\n[梯度检查点] {'启用' if self.gradient_checkpointing else '禁用'} (默认)")
+        # print(f"\n[梯度检查点] {'启用' if self.gradient_checkpointing else '禁用'} (默认)")
         self.gradient_checkpointing = False
 
 
