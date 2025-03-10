@@ -1765,10 +1765,38 @@ class CrossAttnDownBlock2D(nn.Module):
 
 
         if self.downsamplers is not None:
-            for downsampler in self.downsamplers:
+            print("\n" + "▂"*60)
+            print(f"▌ 下采样阶段启动 (共 {len(self.downsamplers)} 个下采样器)")
+            print(f"▌ 初始输入形状: {hidden_states.shape} | 设备: {hidden_states.device}")
+            
+            for ds_idx, downsampler in enumerate(self.downsamplers, 1):
+                # 下采样前准备
+                input_shape = hidden_states.shape
+                print(f"\n▼ 下采样器 [{ds_idx}/{len(self.downsamplers)}]")
+                print(f"  ├─ 类型: {type(downsampler).__name__}")
+                print(f"  ├─ 预期作用: {getattr(downsampler, 'description', '未标注')}")
+                print(f"  ├─ 输入形状: {input_shape}")
+                
+                # 执行下采样
                 hidden_states = downsampler(hidden_states)
-
+                
+                # 下采样后分析
+                output_shape = hidden_states.shape
+                print(f"  ├─ 输出形状: {output_shape}")
+                print(f"  ├─ 空间缩放比: ({input_shape[2]}/{output_shape[2]}, {input_shape[3]}/{output_shape[3]})")
+                print(f"  └─ 通道变化: {input_shape[1]} → {output_shape[1]} (Δ{output_shape[1]-input_shape[1]})")
+                
+                # 形状兼容性检查
+                if output_shape[1] != input_shape[1]:
+                    print(f"  ⚠️ 注意: 下采样器改变了通道数，可能影响后续跨层连接")
+                
+            print("\n" + "▌ 下采样完成，更新输出状态")
+            pre_output_len = len(output_states)
             output_states = output_states + (hidden_states,)
+            print(f"▌ 新增状态形状: {hidden_states.shape}")
+            print(f"▌ 输出元组长度变化: {pre_output_len} → {len(output_states)}")
+
+
 
         return hidden_states, output_states
 
