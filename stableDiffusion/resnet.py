@@ -241,6 +241,7 @@ class ResnetBlock2D(nn.Module):
         conv_2d_out_channels: Optional[int] = None,
     ):
         super().__init__()
+
         if time_embedding_norm == "ada_group":
             raise ValueError(
                 "This class cannot be used with `time_embedding_norm==ada_group`, please use `ResnetBlockCondNorm2D` instead",
@@ -261,53 +262,92 @@ class ResnetBlock2D(nn.Module):
         self.time_embedding_norm = time_embedding_norm
         self.skip_time_act = skip_time_act
 
+        print(f"\n[初始化] groups_out 初始值: {groups_out}（若为None将继承groups值）")
         if groups_out is None:
             groups_out = groups
+            print(f"※ groups_out 自动设置为与groups相同: {groups_out}")
 
+        print(f"\n[GroupNorm1] 创建分组归一化层｜分组数={groups} 输入通道={in_channels} 精度={eps}")
         self.norm1 = torch.nn.GroupNorm(num_groups=groups, num_channels=in_channels, eps=eps, affine=True)
+        print(f"✓ GroupNorm1已生成｜实际分组数={self.norm1.num_groups} 处理通道={self.norm1.num_channels}")
 
+        print(f"\n[卷积层1] 构建3x3卷积｜输入通道={in_channels} 输出通道={out_channels}")
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+        print(f"✓ Conv1权重形状={tuple(self.conv1.weight.shape)} 偏置={self.conv1.bias is not None}")
 
         if temb_channels is not None:
+            print(f"\n[时间嵌入] 检测到时间嵌入维度: {temb_channels}")
+            print(f"模式选择: {self.time_embedding_norm}")
             if self.time_embedding_norm == "default":
+                print(f"创建线性投影层: {temb_channels} → {out_channels}")
                 self.time_emb_proj = nn.Linear(temb_channels, out_channels)
             elif self.time_embedding_norm == "scale_shift":
+                print(f"创建缩放偏移投影: {temb_channels} → {2 * out_channels}")
                 self.time_emb_proj = nn.Linear(temb_channels, 2 * out_channels)
             else:
-                raise ValueError(f"unknown time_embedding_norm : {self.time_embedding_norm} ")
+                raise ValueError(f"不支持的归一化模式: {self.time_embedding_norm} ")
+            print(f"※ 时间嵌入层已创建: {type(self.time_emb_proj)}")
         else:
+            print("\n[时间嵌入] 未提供时间嵌入参数，跳过投影层")
             self.time_emb_proj = None
 
+        print(f"\n[GroupNorm2] 创建次级归一化｜分组数={groups_out} 通道数={out_channels}")
         self.norm2 = torch.nn.GroupNorm(num_groups=groups_out, num_channels=out_channels, eps=eps, affine=True)
+        print(f"✓ GroupNorm2实际参数｜分组数={self.norm2.num_groups} 处理通道={self.norm2.num_channels}")
 
+        print(f"\n[Dropout] 初始化随机丢弃层｜丢弃概率={dropout}")
         self.dropout = torch.nn.Dropout(dropout)
+
         conv_2d_out_channels = conv_2d_out_channels or out_channels
+        print(f"\n[卷积层2] 最终3x3卷积｜输入={out_channels} 输出={conv_2d_out_channels}")
         self.conv2 = nn.Conv2d(out_channels, conv_2d_out_channels, kernel_size=3, stride=1, padding=1)
+        print(f"✓ Conv2权重形状={tuple(self.conv2.weight.shape)} 偏置={self.conv2.bias is not None}")
 
+        print(f"\n[激活函数] 正在加载: {non_linearity}")
         self.nonlinearity = get_activation(non_linearity)
+        print(f"※ 激活函数实例: {type(self.nonlinearity)}")
 
+        print(f"\n[采样层] UP标志状态: {self.up}")
         self.upsample = self.downsample = None
         if self.up:
+            print(f"\n[上采样] 检测到up标志为True，开始初始化｜kernel类型={kernel}")
             if kernel == "fir":
                 fir_kernel = (1, 3, 3, 1)
+                print(f"※ 使用FIR滤波器上采样｜内核形状{fir_kernel}")
                 self.upsample = lambda x: upsample_2d(x, kernel=fir_kernel)
+                print("✓ 已创建lambda函数upsample_2d")
             elif kernel == "sde_vp":
+                print("※ 使用SDE_VP模式｜最近邻插值2倍缩放")
                 self.upsample = partial(F.interpolate, scale_factor=2.0, mode="nearest")
+                print(f"采样函数类型：{type(self.upsample)}")
             else:
+                print(f"使用默认上采样器｜输入通道={in_channels}")
                 self.upsample = Upsample2D(in_channels, use_conv=False)
+                print(f"上采样层结构：{self.upsample.__class__.__name__}")
+
         elif self.down:
+            print(f"\n[下采样] 检测到down标志为True｜kernel类型={kernel}")
             if kernel == "fir":
                 fir_kernel = (1, 3, 3, 1)
+                print(f"※ 使用FIR滤波器下采样｜内核形状{fir_kernel}")
                 self.downsample = lambda x: downsample_2d(x, kernel=fir_kernel)
+                print("✓ 已创建lambda函数downsample_2d")
             elif kernel == "sde_vp":
+                print("※ 使用SDE_VP模式｜平均池化2x2")
                 self.downsample = partial(F.avg_pool2d, kernel_size=2, stride=2)
+                print(f"池化函数类型：{type(self.downsample)}")
             else:
+                print(f"使用默认下采样器｜输入通道={in_channels} 填充=1")
                 self.downsample = Downsample2D(in_channels, use_conv=False, padding=1, name="op")
+                print(f"下采样层结构：{self.downsample.__class__.__name__}")
 
+        print(f"\n[捷径连接] 初始化检查｜输入通道={in_channels} 输出通道={conv_2d_out_channels}")
         self.use_in_shortcut = self.in_channels != conv_2d_out_channels if use_in_shortcut is None else use_in_shortcut
+        print(f"※ 自动判断是否需要捷径连接：{'需要' if self.use_in_shortcut else '不需要'}")
 
         self.conv_shortcut = None
         if self.use_in_shortcut:
+            print(f"\n[创建捷径卷积] 1x1卷积｜in={in_channels} out={conv_2d_out_channels} 偏置={conv_shortcut_bias}")
             self.conv_shortcut = nn.Conv2d(
                 in_channels,
                 conv_2d_out_channels,
@@ -316,59 +356,136 @@ class ResnetBlock2D(nn.Module):
                 padding=0,
                 bias=conv_shortcut_bias,
             )
+            print(f"✓ 捷径卷积创建成功｜权重形状={tuple(self.conv_shortcut.weight.shape)}")
+        else:
+            print("\n[捷径连接] 通道数匹配，跳过1x1卷积")
+
 
     def forward(self, input_tensor: torch.Tensor, temb: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        # 弃用警告处理
         if len(args) > 0 or kwargs.get("scale", None) is not None:
-            deprecation_message = "The `scale` argument is deprecated and will be ignored. Please remove it, as passing it will raise an error in the future. `scale` should directly be passed while calling the underlying pipeline component i.e., via `cross_attention_kwargs`."
+            print("\n⚠️ 检测到过时参数使用".center(50, "-"))
+            deprecation_message = "`scale`参数已弃用，请通过cross_attention_kwargs传递"
+            print(f"警告版本：v1.0.0｜详细信息：{deprecation_message}")
             deprecate("scale", "1.0.0", deprecation_message)
 
+        # 初始状态记录
+        print(f"\n[前向传播] 输入形状: {input_tensor.shape}｜初始隐藏状态相同")
         hidden_states = input_tensor
 
+        # 归一化与激活
+        print(f"\n[预处理] 应用GroupNorm1 + {self.nonlinearity.__class__.__name__}")
         hidden_states = self.norm1(hidden_states)
+        print(f"归一化后均值={hidden_states.mean().item():.4f} 方差={hidden_states.var().item():.4f}")
         hidden_states = self.nonlinearity(hidden_states)
+        print(f"激活后极值：max={hidden_states.max().item():.2f} min={hidden_states.min().item():.2f}")
 
+        # 采样处理
         if self.upsample is not None:
-            # upsample_nearest_nhwc fails with large batch sizes. see https://github.com/huggingface/diffusers/issues/984
+            print(f"\n[上采样] 检测到上采样器｜批次大小={hidden_states.shape[0]}")
             if hidden_states.shape[0] >= 64:
+                print("※ 大批次处理(>=64)｜启用contiguous()")
                 input_tensor = input_tensor.contiguous()
                 hidden_states = hidden_states.contiguous()
+            print(f"上采样前形状：input_tensor={input_tensor.shape} hidden_states={hidden_states.shape}")
             input_tensor = self.upsample(input_tensor)
             hidden_states = self.upsample(hidden_states)
+            print(f"✓ 上采样后形状：input_tensor={input_tensor.shape} hidden_states={hidden_states.shape}")
+
         elif self.downsample is not None:
+            print(f"\n[下采样] 检测到下采样器")
+            print(f"采样前形状：input_tensor={input_tensor.shape} hidden_states={hidden_states.shape}")
             input_tensor = self.downsample(input_tensor)
             hidden_states = self.downsample(hidden_states)
+            print(f"✓ 下采样后形状：input_tensor={input_tensor.shape} hidden_states={hidden_states.shape}")
 
+        # 卷积层1
+        print(f"\n[卷积1] 应用{self.conv1}")
         hidden_states = self.conv1(hidden_states)
+        print(f"卷积输出形状：{hidden_states.shape}｜通道数={hidden_states.size(1)}")
 
+        # 时间嵌入处理
         if self.time_emb_proj is not None:
+            print(f"\n[时间嵌入] 投影层存在｜skip_time_act={self.skip_time_act}")
             if not self.skip_time_act:
+                print("※ 应用非线性激活到temb")
                 temb = self.nonlinearity(temb)
+                print(f"激活后temb统计：max={temb.max().item():.2f} min={temb.min().item():.2f}")
             temb = self.time_emb_proj(temb)[:, :, None, None]
+            print(f"投影后形状：{temb.shape}")
 
+        # 时间归一化分支
+        print(f"\n[时间归一化] 模式={self.time_embedding_norm}")
         if self.time_embedding_norm == "default":
+            print("→ default模式处理")
             if temb is not None:
+                print(f"添加时间嵌入｜hidden_states形状：{hidden_states.shape} temb形状：{temb.shape}")
                 hidden_states = hidden_states + temb
+                print(f"融合后极值：max={hidden_states.max().item():.2f} min={hidden_states.min().item():.2f}")
             hidden_states = self.norm2(hidden_states)
+            print(f"GroupNorm2输出均值={hidden_states.mean().item():.4f}")
+
         elif self.time_embedding_norm == "scale_shift":
+            print("→ scale_shift模式处理")
             if temb is None:
-                raise ValueError(
-                    f" `temb` should not be None when `time_embedding_norm` is {self.time_embedding_norm}"
-                )
+                error_msg = f"scale_shift模式需要temb输入，当前temb=None"
+                print(f"❌ 严重错误：{error_msg}")
+                raise ValueError(error_msg)
+            
+            print(f"分割scale/shift｜输入形状：{temb.shape}")
             time_scale, time_shift = torch.chunk(temb, 2, dim=1)
+            print(f"scale形状：{time_scale.shape} shift形状：{time_shift.shape}")
+            
             hidden_states = self.norm2(hidden_states)
+            print(f"归一化后均值={hidden_states.mean().item():.4f}")
+            
             hidden_states = hidden_states * (1 + time_scale) + time_shift
+            print(f"缩放偏移后极值：max={hidden_states.max().item():.2f} min={hidden_states.min().item():.2f}")
+
         else:
+            print("→ 直接应用GroupNorm2")
             hidden_states = self.norm2(hidden_states)
+            print(f"归一化后统计：均值={hidden_states.mean().item():.4f} 方差={hidden_states.var().item():.4f}")
 
+        # 非线性激活
+        print(f"\n[激活] 应用{self.nonlinearity.__class__.__name__}")
         hidden_states = self.nonlinearity(hidden_states)
+        print(f"激活后统计: max={hidden_states.max().item():.2f} min={hidden_states.min().item():.2f}")
+        print(f"均值={hidden_states.mean().item():.4f} 标准差={hidden_states.std().item():.4f}")
 
+        # Dropout处理
+        print(f"\n[Dropout] 模式={'训练' if self.training else '评估'}｜丢弃率={self.dropout.p}")
         hidden_states = self.dropout(hidden_states)
+        if self.training:
+            zero_ratio = (hidden_states == 0).float().mean().item()
+            print(f"丢弃后零值占比: {zero_ratio*100:.1f}%")
+        else:
+            print("※ 评估模式下Dropout未激活")
+
+        # 最终卷积层
+        print(f"\n[卷积2] 应用{self.conv2}")
         hidden_states = self.conv2(hidden_states)
+        print(f"输出形状: {hidden_states.shape}｜输出通道={hidden_states.size(1)}")
+        print(f"卷积核均值: {self.conv2.weight.mean().item():.4f}")
 
+        # 捷径连接处理
         if self.conv_shortcut is not None:
+            print(f"\n[捷径卷积] 应用1x1卷积调整输入通道")
+            print(f"调整前input_tensor形状: {input_tensor.shape}")
             input_tensor = self.conv_shortcut(input_tensor)
+            print(f"✓ 调整后input_tensor形状: {input_tensor.shape}")
+            print(f"捷径卷积权重范数: {torch.norm(self.conv_shortcut.weight).item():.2f}")
+        else:
+            print("\n[捷径连接] 无通道调整，直接使用原始input_tensor")
 
+        # 残差连接
+        print(f"\n[残差加和] 合并主路径与捷径")
+        print(f"主路径形状: {hidden_states.shape}｜捷径形状: {input_tensor.shape}")
         output_tensor = (input_tensor + hidden_states) / self.output_scale_factor
+        print(f"合并后极值: max={output_tensor.max().item():.2f} min={output_tensor.min().item():.2f}")
+        print(f"缩放因子: {self.output_scale_factor} → 最终均值={output_tensor.mean().item():.4f}")
+        print(f"输出张量形状: {output_tensor.shape}")
+
 
         return output_tensor
 
