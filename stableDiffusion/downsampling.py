@@ -222,21 +222,47 @@ class Downsample2D(nn.Module):
 
 
     def forward(self, hidden_states: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        # 弃用警告处理
         if len(args) > 0 or kwargs.get("scale", None) is not None:
-            deprecation_message = "The `scale` argument is deprecated and will be ignored. Please remove it, as passing it will raise an error in the future. `scale` should directly be passed while calling the underlying pipeline component i.e., via `cross_attention_kwargs`."
+            print("\n⚠️ 过时参数警告 ".center(50, "="))
+            deprecation_message = "检测到已弃用的scale参数，请通过cross_attention_kwargs传递"
+            print(f"替代方案提示：{deprecation_message}")
             deprecate("scale", "1.0.0", deprecation_message)
+
+        # 通道数验证
+        print(f"\n[通道检查] 输入隐藏层通道数：{hidden_states.shape[1]}｜预期通道：{self.channels}")
         assert hidden_states.shape[1] == self.channels
+        print("✓ 通道数验证通过")
 
+        # 归一化处理
         if self.norm is not None:
+            print(f"\n[空间归一化] 应用{self.norm.__class__.__name__}")
+            print(f"原始形状：{hidden_states.permute(0, 2, 3, 1).shape} → 归一化后转置")
             hidden_states = self.norm(hidden_states.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+            print(f"最终形状：{hidden_states.shape}｜通道数保持：{hidden_states.size(1)}")
+        else:
+            print("\n[空间归一化] 未配置归一化层，跳过处理")
 
+        # 填充处理
         if self.use_conv and self.padding == 0:
             pad = (0, 1, 0, 1)
+            print(f"\n[手动填充] 卷积模式需补零｜填充参数：{pad}")
+            print(f"填充前形状：{hidden_states.shape}")
             hidden_states = F.pad(hidden_states, pad, mode="constant", value=0)
+            print(f"✓ 填充后形状：{hidden_states.shape}")
+        elif self.padding != 0:
+            print(f"\n[自动填充] 使用内置padding={self.padding}")
 
+        # 最终卷积前验证
+        print(f"\n[最终检查] 隐藏层通道数：{hidden_states.shape[1]}｜预期通道：{self.channels}")
         assert hidden_states.shape[1] == self.channels
 
+        # 卷积层执行
+        print(f"\n[最终卷积] 应用{self.conv}｜输入形状：{hidden_states.shape}")
         hidden_states = self.conv(hidden_states)
+        print(f"✓ 卷积输出形状：{hidden_states.shape}")
+        print(f"卷积核统计：均值={self.conv.weight.mean().item():.4f} 标准差={self.conv.weight.std().item():.4f}")
+
 
         return hidden_states
 
