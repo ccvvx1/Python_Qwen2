@@ -240,6 +240,7 @@ class ResnetBlock2D(nn.Module):
         conv_shortcut_bias: bool = True,
         conv_2d_out_channels: Optional[int] = None,
     ):
+        print("*"*60)
         super().__init__()
 
         if time_embedding_norm == "ada_group":
@@ -362,6 +363,7 @@ class ResnetBlock2D(nn.Module):
 
 
     def forward(self, input_tensor: torch.Tensor, temb: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        print("*" * 60)
         # 弃用警告处理
         if len(args) > 0 or kwargs.get("scale", None) is not None:
             print("\n⚠️ 检测到过时参数使用".center(50, "-"))
