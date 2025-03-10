@@ -336,7 +336,7 @@ class UNet2DConditionModel(
             time_embed_dim=time_embed_dim,
             timestep_input_dim=timestep_input_dim,
         )
-        print(f"✅ 类别嵌入维度: {self.class_embedding.out_features if hasattr(self, 'class_embedding') else '未启用'}")
+        # print(f"✅ 类别嵌入维度: {self.class_embedding.out_features if hasattr(self, 'class_embedding') else '未启用'}")
 
         # 附加嵌入配置
         print("\n[阶段3] 附加嵌入设置")
@@ -416,6 +416,21 @@ class UNet2DConditionModel(
             elif isinstance(value, (list, tuple)):
                 print(f"✅ {name} 已为序列类型: {value}")
 
+        if isinstance(num_attention_heads, int):
+            num_attention_heads = (num_attention_heads,) * len(down_block_types)
+
+        if isinstance(attention_head_dim, int):
+            attention_head_dim = (attention_head_dim,) * len(down_block_types)
+
+        if isinstance(cross_attention_dim, int):
+            cross_attention_dim = (cross_attention_dim,) * len(down_block_types)
+
+        if isinstance(layers_per_block, int):
+            layers_per_block = [layers_per_block] * len(down_block_types)
+
+        if isinstance(transformer_layers_per_block, int):
+            transformer_layers_per_block = [transformer_layers_per_block] * len(down_block_types)
+            
         # 类别嵌入连接处理
         print("\n[阶段3] 时间嵌入维度调整")
         if class_embeddings_concat:
@@ -457,13 +472,13 @@ class UNet2DConditionModel(
 
             # 获取下采样块参数
             print(f"\n⚙️ 块参数详情:")
-            print(f"   ├─ 残差层数: {layers_per_block[i]}")
-            print(f"   ├─ Transformer层数: {transformer_layers_per_block[i]}")
-            print(f"   ├─ 时间嵌入维度: {blocks_time_embed_dim}")
-            print(f"   ├─ 交叉注意力维度: {cross_attention_dim[i]}")
-            print(f"   ├─ 注意力头数: {num_attention_heads[i]}")
-            print(f"   ├─ 注意力头维度: {attention_head_dim[i] or '自动'}")
-            print(f"   └─ 仅交叉注意力: {only_cross_attention[i]}")
+            # print(f"   ├─ 残差层数: {layers_per_block[i]}")
+            # print(f"   ├─ Transformer层数: {transformer_layers_per_block[i]}")
+            # print(f"   ├─ 时间嵌入维度: {blocks_time_embed_dim}")
+            # print(f"   ├─ 交叉注意力维度: {cross_attention_dim[i]}")
+            # print(f"   ├─ 注意力头数: {num_attention_heads[i]}")
+            # print(f"   ├─ 注意力头维度: {attention_head_dim[i] or '自动'}")
+            # print(f"   └─ 仅交叉注意力: {only_cross_attention[i]}")
 
             # 构建下采样块
             down_block = get_down_block(

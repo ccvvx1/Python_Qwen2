@@ -1331,7 +1331,8 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 print(f"   → 使用安全张量: {'是' if use_safetensors else '否'}")
                 if variant:
                     print(f"   → 使用变体配置: {variant}")
-
+                if class_name == "UNet2DConditionModel":
+                    library_name = "unet_2d_condition"
                 # try:
                 print("\n⏳ 正在加载子模型...")
                 loaded_sub_model = load_sub_model(
