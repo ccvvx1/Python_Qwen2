@@ -20,7 +20,7 @@ from torch import nn
 from diffusers.utils import deprecate, logging
 from diffusers.utils.torch_utils import maybe_allow_in_graph
 from diffusers.models.activations import GEGLU, GELU, ApproximateGELU, FP32SiLU, LinearActivation, SwiGLU
-from diffusers.models.attention_processor import Attention, JointAttnProcessor2_0
+from attention_processor import Attention, JointAttnProcessor2_0
 from diffusers.models.embeddings import SinusoidalPositionalEmbedding
 from normalization import AdaLayerNorm, AdaLayerNormContinuous, AdaLayerNormZero, RMSNorm, SD35AdaLayerNormZeroX
 
