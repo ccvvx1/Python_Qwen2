@@ -1601,34 +1601,61 @@ class CrossAttnDownBlock2D(nn.Module):
         encoder_attention_mask: Optional[torch.Tensor] = None,
         additional_residuals: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, ...]]:
+        print("\n=== 前向传播过程追踪 ===")
+        print(f"初始输入形状: {hidden_states.shape} | dtype={hidden_states.dtype}")
+
+        # 跨注意力参数弃用警告增强版
         if cross_attention_kwargs is not None:
-            if cross_attention_kwargs.get("scale", None) is not None:
-                logger.warning("Passing `scale` to `cross_attention_kwargs` is deprecated. `scale` will be ignored.")
+            deprecated_scale = cross_attention_kwargs.get("scale", None)
+            if deprecated_scale is not None:
+                print(f"\n[!] 弃用警告: 检测到cross_attention_kwargs包含scale参数 (值={deprecated_scale})")
+                print("    ├─ 影响: 该参数已不再生效")
+                print("    └─ 解决方案: 使用新的缩放策略或更新模型配置")
 
         output_states = ()
-
         blocks = list(zip(self.resnets, self.attentions))
+        print(f"\n[模块处理] 总块数: {len(blocks)} | 梯度检查点: {'启用' if self.gradient_checkpointing else '禁用'}")
 
         for i, (resnet, attn) in enumerate(blocks):
+            print(f"\n[块 {i+1}/{len(blocks)}]")
+            print(f"  ├─ 阶段: 残差块前向")
+            print(f"  │   ├─ 类型: {type(resnet).__name__}")
+            print(f"  │   └─ 输入形状: {hidden_states.shape}")
+            
+            # 梯度检查点分支跟踪
             if torch.is_grad_enabled() and self.gradient_checkpointing:
-
+                print(f"  │   ├─ 梯度检查点激活 (PyTorch {torch.__version__})")
+                print(f"  │   │   ├─ 检查点模式: {'use_reentrant=False' if is_torch_version('>=','1.11.0') else 'legacy'}")
+                print(f"  │   │   └─ 检查点参数: {ckpt_kwargs}")
+                
+                # 检查点前的内存分析
+                pre_ckpt_mem = torch.cuda.memory_allocated() if hidden_states.is_cuda else None
+                
                 def create_custom_forward(module, return_dict=None):
                     def custom_forward(*inputs):
-                        if return_dict is not None:
-                            return module(*inputs, return_dict=return_dict)
-                        else:
-                            return module(*inputs)
-
+                        print(f"  │   │   ├─ 检查点内执行: {type(module).__name__}")
+                        print(f"  │   │   │   ├─ 输入数量: {len(inputs)}")
+                        print(f"  │   │   │   └─ 输入形状[0]: {inputs[0].shape if len(inputs)>0 else 'None'}")
+                        return module(*inputs, return_dict=return_dict) if return_dict else module(*inputs)
                     return custom_forward
 
-                ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
                 hidden_states = torch.utils.checkpoint.checkpoint(
                     create_custom_forward(resnet),
                     hidden_states,
                     temb,
                     **ckpt_kwargs,
                 )
-                hidden_states = attn(
+                
+               
+                print(f"  │   └─ 残差块输出形状: {hidden_states.shape}")
+
+                # 注意力模块执行跟踪
+                print(f"  ├─ 阶段: 交叉注意力")
+                print(f"  │   ├─ 模块类型: {type(attn).__name__}")
+                print(f"  │   ├─ 编码器输入形状: {encoder_hidden_states.shape if encoder_hidden_states is not None else 'None'}")
+                print(f"  │   ├─ 注意力掩码: {'存在' if attention_mask is not None else '无'}")
+                
+                attn_output = attn(
                     hidden_states,
                     encoder_hidden_states=encoder_hidden_states,
                     cross_attention_kwargs=cross_attention_kwargs,
@@ -1636,9 +1663,43 @@ class CrossAttnDownBlock2D(nn.Module):
                     encoder_attention_mask=encoder_attention_mask,
                     return_dict=False,
                 )[0]
+                
+                print(f"  │   ├─ 注意力输出形状: {attn_output.shape}")
+                print(f"  │   └─ 数据类型一致性: {attn_output.dtype == hidden_states.dtype}")
+                hidden_states = attn_output
+
+
+
             else:
+                # 残差块前向传播跟踪
+                print("\n" + "═"*40)
+                print(f"【残差块执行】输入检查:")
+                print(f"  ├─ 形状: {hidden_states.shape}")
+                print(f"  ├─ dtype: {hidden_states.dtype}")
+                print(f"  ├─ 设备: {hidden_states.device}")
+                print(f"  └─ 是否含NaN: {torch.isnan(hidden_states).any().item()}")
+                
+                # 执行ResNet块
                 hidden_states = resnet(hidden_states, temb)
-                hidden_states = attn(
+                
+                print(f"\n【残差块输出】特征分析:")
+                print(f"  ├─ 输出形状: {hidden_states.shape} (Δ通道: {hidden_states.shape[1]-hidden_states.shape[1]})")
+                print(f"  ├─ 值范围: [{hidden_states.min().item():.3f}, {hidden_states.max().item():.3f}]")
+                if torch.cuda.is_available():
+                    print(f"  └─ 显存占用: {hidden_states.element_size() * hidden_states.nelement() / 1024**2:.2f} MB")
+
+                # 注意力机制预检查
+                print("\n" + "═"*40)
+                print(f"【注意力机制预检】")
+                print(f"  ├─ 编码器状态: {'已提供' if encoder_hidden_states is not None else '空'} | 形状: {encoder_hidden_states.shape if encoder_hidden_states is not None else 'N/A'}")
+                print(f"  ├─ 注意力掩码: {'存在' if attention_mask is not None else '无'} | 类型: {type(attention_mask).__name__ if attention_mask is not None else ''}")
+                if cross_attention_kwargs:
+                    print(f"  ├─ 跨注意力参数键: {list(cross_attention_kwargs.keys())}")
+                    if "scale" in cross_attention_kwargs:
+                        print(f"  ⚠️  检测到废弃参数'scale' (值: {cross_attention_kwargs['scale']})")
+
+                # 执行注意力模块
+                attn_output = attn(
                     hidden_states,
                     encoder_hidden_states=encoder_hidden_states,
                     cross_attention_kwargs=cross_attention_kwargs,
@@ -1646,12 +1707,62 @@ class CrossAttnDownBlock2D(nn.Module):
                     encoder_attention_mask=encoder_attention_mask,
                     return_dict=False,
                 )[0]
+
+                print("\n【注意力输出分析】")
+                print(f"  ├─ 形状变化: {hidden_states.shape} → {attn_output.shape}")
+                print(f"  ├─ 方差变化: {hidden_states.var().item():.3f} → {attn_output.var().item():.3f}")
+                if attention_mask is not None:
+                    print(f"  ├─ 有效注意力区域: {attention_mask.sum().item()}/{attention_mask.numel()} ({attention_mask.sum().item()/attention_mask.numel()*100:.1f}%)")
+                print(f"  └─ 梯度追踪: {'启用' if attn_output.requires_grad else '禁用'}")
+
+
 
             # apply additional residuals to the output of the last pair of resnet and attention blocks
-            if i == len(blocks) - 1 and additional_residuals is not None:
-                hidden_states = hidden_states + additional_residuals
+            # 在条件判断前添加调试信息
+            print("\n" + "═"*55)
+            print(f"【阶段检查】块索引: {i+1}/{len(blocks)} | 是否末层块: {i == len(blocks)-1}")
+            print(f"  ├─ additional_residuals 存在: {additional_residuals is not None}")
 
+            if i == len(blocks) - 1 and additional_residuals is not None:
+                print("\n!! 正在执行附加残差连接 !!")
+                # 维度兼容性检查
+                print(f"  ├─ 主隐藏状态形状: {hidden_states.shape}")
+                print(f"  ├─ 附加残差形状: {additional_residuals.shape}")
+                
+                # 形状匹配验证
+                if hidden_states.shape != additional_residuals.shape:
+                    print(f"  ⚠️ 形状不匹配警告: 主状态{list(hidden_states.shape)} vs 残差{list(additional_residuals.shape)}")
+                    print(f"    可能影响: 将触发广播机制或导致运行时错误")
+                else:
+                    print(f"  ✓ 形状匹配验证通过")
+                
+                # 设备/数据类型校验
+                print(f"  ├─ 设备一致性: {hidden_states.device == additional_residuals.device}")
+                print(f"  ├─ 数据类型: 主状态({hidden_states.dtype}) vs 残差({additional_residuals.dtype})")
+                
+                # 残差操作前统计
+                pre_add_mean = hidden_states.mean().item()
+                pre_add_std = hidden_states.std().item()
+                residual_mean = additional_residuals.mean().item()
+                
+                # 执行加法操作
+                hidden_states = hidden_states + additional_residuals
+                
+                # 操作后统计对比
+                print(f"  ├─ 操作前统计:")
+                print(f"     │─ 主状态均值: {pre_add_mean:.4f} ± {pre_add_std:.4f}")
+                print(f"     └─ 残差均值: {residual_mean:.4f}")
+                print(f"  └─ 操作后统计:")
+                print(f"     │─ 合并均值: {hidden_states.mean().item():.4f}")
+                print(f"     └─ 合并方差: {hidden_states.var().item():.4f}")
+
+            # 输出状态更新跟踪
+            prev_output_len = len(output_states)
             output_states = output_states + (hidden_states,)
+            print(f"\n【输出状态更新】")
+            print(f"  ├─ 新增状态形状: {hidden_states.shape}")
+            print(f"  └─ 输出元组长度: {prev_output_len} → {len(output_states)}")
+
 
         if self.downsamplers is not None:
             for downsampler in self.downsamplers:
