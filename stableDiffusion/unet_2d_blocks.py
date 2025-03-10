@@ -34,7 +34,7 @@ from resnet import (
     Upsample2D,
 )
 from diffusers.models.transformers.dual_transformer_2d import DualTransformer2DModel
-from diffusers.models.transformers.transformer_2d import Transformer2DModel
+from transformer_2d import Transformer2DModel
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
