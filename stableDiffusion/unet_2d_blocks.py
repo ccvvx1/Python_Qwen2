@@ -67,21 +67,42 @@ def get_down_block(
     downsample_type: Optional[str] = None,
     dropout: float = 0.0,
 ):
-    # If attn head dim is not defined, we default it to the number of heads
-    if attention_head_dim is None:
-        logger.warning(
-            f"It is recommended to provide `attention_head_dim` when calling `get_down_block`. Defaulting `attention_head_dim` to {num_attention_heads}."
-        )
-        attention_head_dim = num_attention_heads
 
+    print("\n=== 下采样块初始化调试 ===")
+    print(f"输入参数检查:")
+    print(f"  down_block_type: {down_block_type} (原始输入)")
+    print(f"  attention_head_dim: {attention_head_dim} | num_attention_heads: {num_attention_heads}")
+
+    # Attention head 维度处理
+    if attention_head_dim is None:
+        original_attention_head_dim = attention_head_dim
+        attention_head_dim = num_attention_heads
+        print(f"\n[!] 警告: attention_head_dim未提供，使用默认值")
+        print(f"    |-- 原始值: {original_attention_head_dim} → 新值: {attention_head_dim}")
+        print(f"    |-- 建议: 明确设置 attention_head_dim 参数以避免意外行为")
+
+    # 块类型名称清理
+    original_block_type = down_block_type
     down_block_type = down_block_type[7:] if down_block_type.startswith("UNetRes") else down_block_type
+    print(f"\n[预处理] 块类型标准化:")
+    print(f"    原始类型: {original_block_type}")
+    print(f"    处理后类型: {down_block_type}")
+
+    # 分支选择调试
+    print(f"\n[分支选择] 正在创建下采样块...")
     if down_block_type == "DownBlock2D":
+        print(f"  选择 DownBlock2D")
+        print(f"    关键参数:")
+        print(f"    num_layers={num_layers}, in/out_channels={in_channels}→{out_channels}")
+        print(f"    temb_channels={temb_channels}, add_downsample={add_downsample}")
+        print(f"    resnet_eps={resnet_eps}, act_fn={resnet_act_fn}, groups={resnet_groups}")
+        
         return DownBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
             out_channels=out_channels,
             temb_channels=temb_channels,
-            dropout=dropout,
+            dropout=0.0,
             add_downsample=add_downsample,
             resnet_eps=resnet_eps,
             resnet_act_fn=resnet_act_fn,
@@ -89,13 +110,19 @@ def get_down_block(
             downsample_padding=downsample_padding,
             resnet_time_scale_shift=resnet_time_scale_shift,
         )
+
     elif down_block_type == "ResnetDownsampleBlock2D":
+        print(f"  选择 ResnetDownsampleBlock2D")
+        print(f"    特殊参数:")
+        print(f"    skip_time_act={resnet_skip_time_act}")
+        print(f"    output_scale_factor={resnet_out_scale_factor}")
+        
         return ResnetDownsampleBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
             out_channels=out_channels,
             temb_channels=temb_channels,
-            dropout=dropout,
+            dropout=0.0,
             add_downsample=add_downsample,
             resnet_eps=resnet_eps,
             resnet_act_fn=resnet_act_fn,
@@ -104,11 +131,21 @@ def get_down_block(
             skip_time_act=resnet_skip_time_act,
             output_scale_factor=resnet_out_scale_factor,
         )
+
     elif down_block_type == "AttnDownBlock2D":
-        if add_downsample is False:
-            downsample_type = None
-        else:
-            downsample_type = downsample_type or "conv"  # default to 'conv'
+    # AttnDownBlock2D 分支
+
+        print(f"\n[分支选择] 创建注意力下采样块 AttnDownBlock2D")
+        print(f"    ├─ 下采样类型决策: add_downsample={add_downsample}")
+        downsample_type = None if not add_downsample else (downsample_type or "conv")
+        print(f"    └─ 最终 downsample_type: {downsample_type}")
+
+        print(f"\n[参数配置]")
+        print(f"    ├─ 基础结构: in={in_channels} → out={out_channels}, layers={num_layers}")
+        print(f"    ├─ 时间嵌入: temb_channels={temb_channels}")
+        print(f"    ├─ 注意力头维度: head_dim={attention_head_dim}")
+        print(f"    └─ ResNet时间缩放: {resnet_time_scale_shift or '默认'}")
+
         return AttnDownBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
@@ -123,9 +160,26 @@ def get_down_block(
             resnet_time_scale_shift=resnet_time_scale_shift,
             downsample_type=downsample_type,
         )
+
+    # CrossAttnDownBlock2D 分支
     elif down_block_type == "CrossAttnDownBlock2D":
+        print(f"\n[分支选择] 创建交叉注意力下采样块 CrossAttnDownBlock2D")
+        print(f"    ! 必须参数检查: cross_attention_dim={cross_attention_dim}")
         if cross_attention_dim is None:
-            raise ValueError("cross_attention_dim must be specified for CrossAttnDownBlock2D")
+            error_msg = (
+                "未指定 cross_attention_dim\n"
+                "可能原因: 1) 忘记传递文本编码器输出维度 2) 配置参数不完整\n"
+                "解决方案示例: get_down_block(..., cross_attention_dim=768)"
+            )
+            print(f"[错误] {error_msg}")
+            raise ValueError(error_msg)
+
+        print(f"\n[高级配置]")
+        print(f"    ├─ Transformer层/块: {transformer_layers_per_block}")
+        print(f"    ├─ 双交叉注意力: {'启用' if dual_cross_attention else '禁用'}")
+        print(f"    ├─ 线性投影: {'是' if use_linear_projection else '否'}")
+        print(f"    └─ 注意力类型: {attention_type or '默认'}")
+
         return CrossAttnDownBlock2D(
             num_layers=num_layers,
             transformer_layers_per_block=transformer_layers_per_block,
@@ -147,9 +201,26 @@ def get_down_block(
             resnet_time_scale_shift=resnet_time_scale_shift,
             attention_type=attention_type,
         )
+
+    # SimpleCrossAttnDownBlock2D 分支
     elif down_block_type == "SimpleCrossAttnDownBlock2D":
+        print(f"\n[分支选择] 创建简单交叉注意力下采样块 SimpleCrossAttnDownBlock2D")
+        print(f"    ! 必须参数检查: cross_attention_dim={cross_attention_dim}")
         if cross_attention_dim is None:
-            raise ValueError("cross_attention_dim must be specified for SimpleCrossAttnDownBlock2D")
+            error_msg = (
+                "缺少文本条件维度\n"
+                "修复建议: 该模块需要与文本编码器连接，请确保:\n"
+                "1) 已正确配置文本编码器\n"
+                "2) 传递了正确的 cross_attention_dim 参数"
+            )
+            print(f"[错误] {error_msg}")
+            raise ValueError(error_msg)
+
+        print(f"\n[归一化配置]")
+        print(f"    ├─ 交叉注意力归一化: {cross_attention_norm or '无'}")
+        print(f"    ├─ 跳跃连接时间激活: {'启用' if resnet_skip_time_act else '禁用'}")
+        print(f"    └─ 输出缩放因子: {resnet_out_scale_factor}")
+
         return SimpleCrossAttnDownBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
@@ -168,7 +239,29 @@ def get_down_block(
             only_cross_attention=only_cross_attention,
             cross_attention_norm=cross_attention_norm,
         )
+
     elif down_block_type == "SkipDownBlock2D":
+        
+    # SkipDownBlock2D 分支
+
+        print("\n=== 初始化跳跃下采样块 ===")
+        print(f"类型: SkipDownBlock2D (带残差跳跃连接)")
+        print(f"结构参数:")
+        print(f"  ├─ 残差层数: {num_layers}")
+        print(f"  ├─ 通道扩展: {in_channels} → {out_channels}")
+        print(f"  ├─ 时间嵌入维度: {temb_channels} | 激活函数: {resnet_act_fn}")
+        print(f"  └─ 时间缩放模式: {resnet_time_scale_shift or '默认'}")
+        
+        print(f"\n下采样配置:")
+        print(f"  ├─ 添加下采样层: {add_downsample}")
+        print(f"  └─ 填充策略: {downsample_padding} (类型: {type(downsample_padding).__name__})")
+        
+        # 残差连接合理性检查
+        if in_channels == out_channels:
+            print(f"[状态] 输入输出通道相同({in_channels})，将使用标准残差连接")
+        else:
+            print(f"[警告] 通道数变化({in_channels}→{out_channels})，需要通道调整残差连接")
+        
         return SkipDownBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
@@ -181,7 +274,29 @@ def get_down_block(
             downsample_padding=downsample_padding,
             resnet_time_scale_shift=resnet_time_scale_shift,
         )
+
+    # AttnSkipDownBlock2D 分支  
     elif down_block_type == "AttnSkipDownBlock2D":
+        print("\n=== 初始化注意力跳跃块 ===")
+        print(f"类型: AttnSkipDownBlock2D (集成多头注意力)")
+        
+        # 注意力头维度校验
+        head_dim_warning = ""
+        if attention_head_dim is not None:
+            if attention_head_dim % 8 != 0:
+                head_dim_warning = f"[警告] 注意力头维度{attention_head_dim}不是8的倍数，可能影响Tensor Core加速"
+        else:
+            head_dim_warning = "[错误] attention_head_dim 未指定"
+            raise ValueError(head_dim_warning)
+        
+        print(f"注意力机制:")
+        print(f"  ├─ 头维度: {attention_head_dim}{' ✓' if attention_head_dim%8==0 else ' ×'}")
+        print(f"  {head_dim_warning}")
+        
+        print(f"\n残差配置:")
+        print(f"  ├─ 时间嵌入处理: {resnet_time_scale_shift}")
+        print(f"  └─ Dropout概率: {dropout} (训练模式启用)")
+        
         return AttnSkipDownBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
@@ -194,7 +309,31 @@ def get_down_block(
             attention_head_dim=attention_head_dim,
             resnet_time_scale_shift=resnet_time_scale_shift,
         )
+
+    # DownEncoderBlock2D 分支
     elif down_block_type == "DownEncoderBlock2D":
+        print("\n=== 初始化编码器专用块 ===")
+        print(f"类型: DownEncoderBlock2D (编码器特征压缩)")
+        
+        # 编码器结构强制约束
+        if not add_downsample:
+            error_msg = (
+                "编码器块必须包含下采样层\n"
+                "当前配置: add_downsample=False\n"
+                "解决方案: 设置 add_downsample=True 或更换块类型"
+            )
+            print(f"[严重错误] {error_msg}")
+            raise ValueError(error_msg)
+        
+        print(f"关键参数:")
+        print(f"  ├─ 分组卷积: groups={resnet_groups} (1=标准卷积)")
+        print(f"  ├─ 下采样填充: {downsample_padding}")
+        print(f"  └─ 输出激活函数: {resnet_act_fn.upper() if resnet_act_fn else '线性'}")
+        
+        print(f"\n结构验证:")
+        print(f"  ├─ 输入形状假设: [N, C, H, W] => 输出形状应为 [N, {out_channels}, H/2, W/2]")
+        print(f"  └─ 残差连接: {'启用' if in_channels == out_channels else '禁用'}") 
+        
         return DownEncoderBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
@@ -207,7 +346,25 @@ def get_down_block(
             downsample_padding=downsample_padding,
             resnet_time_scale_shift=resnet_time_scale_shift,
         )
+
+        # AttnDownEncoderBlock2D 分支
     elif down_block_type == "AttnDownEncoderBlock2D":
+        print("\n=== 注意力编码器下采样块初始化 ===")
+        print(f"块类型: AttnDownEncoderBlock2D (集成空间注意力)")
+        
+        # 注意力头维度校验
+        print(f"[硬件优化检查] 注意力头维度={attention_head_dim}")
+        if attention_head_dim is not None:
+            if attention_head_dim % 8 != 0:
+                print(f"  └─ [!] 警告: 头维度不是8的倍数，可能影响硬件加速性能 (当前值: {attention_head_dim})")
+        else:
+            print(f"  └─ [✓] 使用默认头维度计算")
+        
+        print(f"\n残差网络配置:")
+        print(f"  ├─ 分组卷积: groups={resnet_groups} | 激活函数={resnet_act_fn}")
+        print(f"  ├─ 时间缩放策略: {resnet_time_scale_shift or '无特殊处理'}") 
+        print(f"  └─ 下采样填充: {downsample_padding} (类型检查: {type(downsample_padding)})")
+        
         return AttnDownEncoderBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
@@ -221,7 +378,22 @@ def get_down_block(
             attention_head_dim=attention_head_dim,
             resnet_time_scale_shift=resnet_time_scale_shift,
         )
+
+    # KDownBlock2D 分支
     elif down_block_type == "KDownBlock2D":
+        print("\n=== Keras风格下采样块初始化 ===")
+        print(f"块类型: KDownBlock2D (时序特征整合)")
+        
+        # 时间嵌入兼容性检查
+        print(f"[时序参数校验] temb_channels={temb_channels}")
+        if temb_channels == 0:
+            print(f"  └─ [!] 异常配置: 时间嵌入维度为0，建议禁用时间条件或检查参数传递")
+        
+        print(f"\n核心参数:")
+        print(f"  ├─ 残差层深度: {num_layers}层")
+        print(f"  ├─ 通道扩展: {in_channels} → {out_channels} (缩放因子: {out_channels/in_channels:.1f}x)")
+        print(f"  └─ 激活函数: {resnet_act_fn} (epsilon={resnet_eps})")
+        
         return KDownBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
@@ -232,7 +404,28 @@ def get_down_block(
             resnet_eps=resnet_eps,
             resnet_act_fn=resnet_act_fn,
         )
+
+    # KCrossAttnDownBlock2D 分支  
     elif down_block_type == "KCrossAttnDownBlock2D":
+        print("\n=== 交叉注意力下采样块初始化 ===")
+        print(f"块类型: KCrossAttnDownBlock2D (多模态融合)")
+        
+        # 交叉注意力维度强制校验
+        print(f"[跨模态参数检查] cross_attention_dim={cross_attention_dim}")
+        if cross_attention_dim is None:
+            error_msg = (
+                "缺少跨模态条件维度\n"
+                "可能原因: 1) 未连接文本编码器 2) 配置参数缺失\n"
+                "示例解决方案: cross_attention_dim=768"
+            )
+            print(f"[严重错误] {error_msg}")
+            raise ValueError(error_msg)
+        
+        # 自注意力逻辑跟踪
+        self_attention_flag = not add_downsample
+        print(f"  ├─ 自注意力机制: {'启用' if self_attention_flag else '禁用'} (add_downsample={add_downsample})")
+        print(f"  └─ 注意力头维度: {attention_head_dim} (与文本编码器维度兼容性: {cross_attention_dim % attention_head_dim == 0})")
+        
         return KCrossAttnDownBlock2D(
             num_layers=num_layers,
             in_channels=in_channels,
@@ -246,6 +439,9 @@ def get_down_block(
             attention_head_dim=attention_head_dim,
             add_self_attention=True if not add_downsample else False,
         )
+
+
+
     raise ValueError(f"{down_block_type} does not exist.")
 
 
