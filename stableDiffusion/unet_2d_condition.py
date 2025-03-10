@@ -21,7 +21,8 @@ import torch.utils.checkpoint
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.loaders import PeftAdapterMixin, UNet2DConditionLoadersMixin
 from diffusers.loaders.single_file_model import FromOriginalModelMixin
-from diffusers.utils import USE_PEFT_BACKEND, BaseOutput, deprecate, logging, scale_lora_layers, unscale_lora_layers
+from diffusers.utils import USE_PEFT_BACKEND, BaseOutput, deprecate, logging, unscale_lora_layers
+from peft_utils import scale_lora_layers
 from diffusers.models.activations import get_activation
 from diffusers.models.attention_processor import (
     ADDED_KV_ATTENTION_PROCESSORS,
@@ -1275,37 +1276,106 @@ class UNet2DConditionModel(
     def process_encoder_hidden_states(
         self, encoder_hidden_states: torch.Tensor, added_cond_kwargs: Dict[str, Any]
     ) -> torch.Tensor:
-        if self.encoder_hid_proj is not None and self.config.encoder_hid_dim_type == "text_proj":
+        print("\n=== 编码器隐藏状态投影处理 ===")
+        print(f"当前配置: encoder_hid_dim_type={self.config.encoder_hid_dim_type}")
+        print(f"投影层状态: {'启用' if self.encoder_hid_proj else '未启用'}")
+
+        # 文本投影分支
+        if self.encoder_hid_proj and self.config.encoder_hid_dim_type == "text_proj":
+            print("[分支] 纯文本投影 (text_proj)")
+            print(f"输入文本编码形状: {encoder_hidden_states.shape}") if encoder_hidden_states is not None else print("警告: 文本编码为空")
             encoder_hidden_states = self.encoder_hid_proj(encoder_hidden_states)
-        elif self.encoder_hid_proj is not None and self.config.encoder_hid_dim_type == "text_image_proj":
-            # Kandinsky 2.1 - style
-            if "image_embeds" not in added_cond_kwargs:
-                raise ValueError(
-                    f"{self.__class__} has the config param `encoder_hid_dim_type` set to 'text_image_proj' which requires the keyword argument `image_embeds` to be passed in `added_cond_kwargs`"
-                )
+            print(f"投影后形状: {encoder_hidden_states.shape} | 数据类型: {encoder_hidden_states.dtype}")
 
+        # 图文混合投影分支 (Kandinsky 2.1)
+        elif self.encoder_hid_proj and self.config.encoder_hid_dim_type == "text_image_proj":
+            print("[分支] 图文混合投影 (Kandinsky 2.1)")
+            print(f"输入参数检查: added_cond_kwargs.keys()={list(added_cond_kwargs.keys())}")
+            
+            # 图像嵌入校验
+            if "image_embeds" not in added_cond_kwargs:
+                error_msg = (
+                    "缺少必要参数 'image_embeds'\n"
+                    f"当前可用参数: {list(added_cond_kwargs.keys())}\n"
+                    "解决方案: 请确保调用时传递图像嵌入，例如:\n"
+                    "pipe(..., added_cond_kwargs={'image_embeds': image_embeds})"
+                )
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            
             image_embeds = added_cond_kwargs.get("image_embeds")
+            print(f"图像嵌入属性: shape={image_embeds.shape} | 均值={image_embeds.mean().item():.4f}")
+            print(f"文本编码输入形状: {encoder_hidden_states.shape}") if encoder_hidden_states is not None else print("警告: 文本编码为空")
+            
+            # 执行联合投影
             encoder_hidden_states = self.encoder_hid_proj(encoder_hidden_states, image_embeds)
-        elif self.encoder_hid_proj is not None and self.config.encoder_hid_dim_type == "image_proj":
-            # Kandinsky 2.2 - style
+            print(f"联合投影结果: shape={encoder_hidden_states.shape} | 标准差={encoder_hidden_states.std().item():.4f}")
+
+        # 纯图像投影分支 (Kandinsky 2.2)
+        elif self.encoder_hid_proj and self.config.encoder_hid_dim_type == "image_proj":
+            print("[分支] 纯图像投影 (Kandinsky 2.2)")
+            print(f"输入参数检查: added_cond_kwargs.keys()={list(added_cond_kwargs.keys())}")
+            
+            # 图像嵌入校验
             if "image_embeds" not in added_cond_kwargs:
-                raise ValueError(
-                    f"{self.__class__} has the config param `encoder_hid_dim_type` set to 'image_proj' which requires the keyword argument `image_embeds` to be passed in `added_cond_kwargs`"
+                error_msg = (
+                    "缺少必要参数 'image_embeds'\n"
+                    f"当前可用参数: {list(added_cond_kwargs.keys())}\n"
+                    "提示: 该配置需要单独的图像条件输入"
                 )
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            
             image_embeds = added_cond_kwargs.get("image_embeds")
+            print(f"图像嵌入属性: shape={image_embeds.shape} | 数据类型={image_embeds.dtype}")
+            
+            # 执行图像投影
             encoder_hidden_states = self.encoder_hid_proj(image_embeds)
+            print(f"图像投影后形状: {encoder_hidden_states.shape} | 极值范围: [{encoder_hidden_states.min().item():.4f}, {encoder_hidden_states.max().item():.4f}]")
+
         elif self.encoder_hid_proj is not None and self.config.encoder_hid_dim_type == "ip_image_proj":
+            print("\n=== IP适配器图像投影处理 ===")
+            print(f"当前模式: {self.config.encoder_hid_dim_type}")
+            print(f"文本编码投影层状态: {'已启用' if hasattr(self, 'text_encoder_hid_proj') else '未配置'}")
+
+            # 图像嵌入参数强制检查
             if "image_embeds" not in added_cond_kwargs:
-                raise ValueError(
-                    f"{self.__class__} has the config param `encoder_hid_dim_type` set to 'ip_image_proj' which requires the keyword argument `image_embeds` to be passed in `added_cond_kwargs`"
+                error_msg = (
+                    f"[配置冲突] 需要图像嵌入但未提供\n"
+                    f"当前可用参数: {list(added_cond_kwargs.keys())}\n"
+                    f"解决方案: 请通过 added_cond_kwargs 传递 image_embeds 参数\n"
+                    f"示例: pipe(..., added_cond_kwargs={'{'}'image_embeds': image_embeds{'}'})"
                 )
+                print(f"[错误] {error_msg}")
+                raise ValueError(error_msg)
+            else:
+                print(f"输入校验通过: 检测到 image_embeds (形状: {added_cond_kwargs['image_embeds'].shape})")
 
+            # 文本编码投影处理
             if hasattr(self, "text_encoder_hid_proj") and self.text_encoder_hid_proj is not None:
+                print("\n[文本编码投影]")
+                print(f"原始文本编码形状: {encoder_hidden_states.shape if encoder_hidden_states is not None else 'None'}")
                 encoder_hidden_states = self.text_encoder_hid_proj(encoder_hidden_states)
+                print(f"投影后文本编码: {encoder_hidden_states.shape} | 数据类型: {encoder_hidden_states.dtype}")
+            else:
+                print("\n[文本编码投影] 跳过 (未配置 text_encoder_hid_proj)")
 
+            # 图像嵌入投影处理
+            print("\n[图像嵌入投影]")
             image_embeds = added_cond_kwargs.get("image_embeds")
+            print(f"原始图像嵌入形状: {image_embeds.shape} | 均值: {image_embeds.mean().item():.4f}")
+
             image_embeds = self.encoder_hid_proj(image_embeds)
+            print(f"投影后图像嵌入: {image_embeds.shape} | 值范围: [{image_embeds.min().item():.4f}, {image_embeds.max().item():.4f}]")
+
+            # 多模态编码合并
+            print("\n[多模态编码合并]")
             encoder_hidden_states = (encoder_hidden_states, image_embeds)
+            print(f"合并后结构类型: {type(encoder_hidden_states)}")
+            print(f"元组元素0 (文本): {encoder_hidden_states[0].shape}")
+            print(f"元组元素1 (图像): {encoder_hidden_states[1].shape}")
+            print(f"形状兼容性检查: 文本批次 {encoder_hidden_states[0].shape[0]} == 图像批次 {encoder_hidden_states[1].shape[0]} → {'通过' if encoder_hidden_states[0].shape[0] == encoder_hidden_states[1].shape[0] else '失败'}")
+
         return encoder_hidden_states
 
     def forward(
